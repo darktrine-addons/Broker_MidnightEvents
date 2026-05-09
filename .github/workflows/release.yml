@@ -1,0 +1,22 @@
+name: Publish
+
+on:
+  push:
+    tags: ['*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # required — packager needs full tag history for changelog
+
+      - uses: BigWigsMods/packager@v2
+        env:
+          CF_API_KEY:     ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH:   ${{ secrets.GITHUB_TOKEN }}

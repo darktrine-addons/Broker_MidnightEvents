@@ -1,0 +1,18 @@
+## Interface: 120005
+## Category: Data Broker
+## Title: Broker: |cffffffffMidnightEvents|r
+## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
+## Notes: LibDataBroker plugin tracking world event timers and weekly activities for the Midnight expansion.
+## Author: artherion77
+## Version: @project-version@
+## Category-enUS: Data Broker
+## SavedVariables: Broker_MidnightEventsDB
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+Locales\Locales.xml
+Settings.lua
+Core.lua

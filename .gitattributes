@@ -1,0 +1,22 @@
+# Normalise text files to LF in the repository.
+* text=auto eol=lf
+
+*.lua  text eol=lf
+*.toc  text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.xml  text eol=lf
+*.yml  text eol=lf
+
+# Binary assets — no conversion
+*.png  binary
+*.blp  binary
+*.tga  binary
+*.mp3  binary
+*.ogg  binary
+
+# Exclude dev-only files from `git archive` (GitHub release zips).
+.gitattributes  export-ignore
+.gitignore      export-ignore
+.github         export-ignore
+design          export-ignore

@@ -1,0 +1,6 @@
+package-as: Broker_MidnightEvents
+
+enable-nolib-creation: no
+
+ignore:
+    - design
