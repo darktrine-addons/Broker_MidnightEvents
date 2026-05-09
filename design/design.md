@@ -4,7 +4,7 @@ This document captures the design and implementation plan for `Broker_MidnightEv
 
 ## Goal
 
-A single LDB broker button. The **broker text** shows the most urgent upcoming timed event ("Stormarion in 23m" / "Abundance now!"). The **tooltip** has three collapsible sections: live event countdowns, a weekly/daily checklist for the current character, and an alt summary row. No standalone window — the addon lives entirely in the broker bar.
+A single LDB broker button. The **broker text** shows the most urgent upcoming timed event ("Stormarion in 23m" / "Abundance now!"). The **tooltip** has three collapsible top-level sections — live event countdowns, this week's checklist (with collapsible sub-groups: World, Dungeons, PvP, Activities, Housing, Profession, Currencies), and an alt roll-up. For altoholics, **Shift-Right-Click** detaches a scrollable, sortable detail panel showing all tracked alts in a tabular grid. No always-on standalone window — the addon lives in the broker bar by default.
 
 ## Non-Goals
 
@@ -24,9 +24,10 @@ These events have a visible world-map marker with a server-managed countdown. No
 | Event | Zone | Cadence | Completion |
 |---|---|---|---|
 | **Abundance** | Rotating (4 zones) | Every 8 h, fixed | Per-char (8 Shards/week cap) |
-| **Stormarion Assault** | Voidstorm | Every 30 min, fixed | Per-char (weekly quest ×2) |
+| **Stormarion Assault** | Voidstorm | Every 30 min, fixed | Per-char (weekly quest, count TBD) |
 | **Slayer's Rise PvP Events** | Voidstorm | Every 30 min, rotating pool | Stateless |
 | **Bountiful Delve (daily marker)** | All zones | Daily reset | Per-char |
+| **Void Assault — active zone** (12.0.5) | Eversong or Zul'Aman | Weekly rotation (no countdown — week-long indicator) | Stateless zone marker |
 
 **API approach — fully event-driven:**
 
@@ -61,19 +62,59 @@ end
 
 ### Tier 2 — Weekly Checklist (quest-completion-driven)
 
-Binary done/not-done checks with no live countdown. Refresh on login and on `QUEST_TURNED_IN`.
+Binary done/not-done checks with no live countdown. Refresh on login and on `QUEST_TURNED_IN`. Sub-grouped in the tooltip and Settings panel (see "Tooltip Section Hierarchy" below).
 
-| Activity | API | Quest source |
-|---|---|---|
-| **Prey Hunts** (4 high-value/week) | `C_QuestLog.IsQuestFlaggedCompleted(questID)` × 4 | Quest IDs from Wowhead at implementation |
-| **World Bosses** (warband loot) | `GetSavedWorldBossInfo(index)` — check `locked` per boss | Native API |
-| **Saltheril's Soiree** ("Fortify the Runestones") | `IsQuestFlaggedCompleted` | Wowhead |
-| **Stormarion Assault weekly** ("Stand Your Ground") | `IsQuestFlaggedCompleted` | Wowhead |
-| **Great Vault progress** | `C_WeeklyRewards.GetActivities()` → `progress / threshold` | Native API |
-| **Legends of the Haranir** (warband) | `IsQuestFlaggedCompleted` | Wowhead |
-| **Patron Orders / Profession KP** | `IsQuestFlaggedCompleted` × profession | Wowhead; one ID per crafting prof |
+#### Group: World
 
-**Event-driven pattern:**
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Prey Hunts** | `N 4/4 · H 4/4 · NM 3/3` (12 contracts total: 4 zones × 3 tiers) | `IsQuestFlaggedCompleted` × 12 | NM tier locks until Preyseeker Rank 4. When locked, render NM tier as `NM —` greyed. Weekly *quest* asks for 3 Nightmare hunts (per icy-veins May 2026); raw contract cap is 4 per tier. |
+| **World Bosses** | `Lu'ashal ✓ · Cragpine ✗ · Thorm'belan ✗ · Predaxas ✓` | `GetSavedWorldBossInfo(index)` iterate, check `locked` | Native API; truth at runtime regardless of rotation model. |
+| **Saltheril's Soiree** ("Fortify the Runestones") | binary `✓ / ✗` | `IsQuestFlaggedCompleted` | Eversong runestone weekly. Quest ID: TBD. |
+| **Stormarion Assault weekly** ("Stand Your Ground") | `0/2` or `0/1` (TBD) | `IsQuestFlaggedCompleted` | Voidstorm. Required-runs-per-week TBD. |
+| **Legends of the Haranir** (warband) | binary | `IsQuestFlaggedCompleted` | Solo scenario. |
+| **Void Strikes weekly** (12.0.5) | progress (cap TBD) | `IsQuestFlaggedCompleted` *or* objective scan | Field Accolades currency cap is an alternative tracking source. |
+| **Void Incursion** (12.0.5) — completed this week | binary | `IsQuestFlaggedCompleted` | Single binary check. |
+| **Lady Liadrin Weekly World Event** | binary | `IsQuestFlaggedCompleted` | Spark reward. Quest ID: TBD. |
+
+#### Group: Dungeons & Voidforge
+
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Voidforge questline** (12.0.5) — #1 priority | binary or progress | `IsQuestFlaggedCompleted` | 2 bonus roll tokens + Ascendant Voidcores for weapon/trinket upgrades. Highest priority row visually. |
+| **Silvermoon Weekly Dungeon** ⚠ TBD | binary | `IsQuestFlaggedCompleted` | Quest giver in Silvermoon City; rotates weekly (random dungeon, any difficulty). **Quest giver and quest ID need Wowhead lookup.** |
+| **Bountiful Delve weekly** (1st of the week) | binary | `IsQuestFlaggedCompleted` | First Bountiful Delve quest. |
+| **T11 Delve weekly** | binary | `IsQuestFlaggedCompleted` | Tier-gated Delve weekly distinct from Bountiful (per icy-veins May 2026). |
+| **Mythic+ weekly best** | `+8` (vault-credit run, capped at +10 this season) | `C_MythicPlus.GetWeeklyBestForMap(mapID)` + `RequestMapInfo` | Show best +keystone run this week. |
+
+#### Group: PvP
+
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Call for Battle** ⚠ TBD | binary | `IsQuestFlaggedCompleted` | PvP weekly; appears to require Training Battlegrounds (per user). **Quest giver and quest ID need Wowhead lookup.** |
+
+#### Group: Activities
+
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Great Vault** | `5/8` (slots filled) | `C_WeeklyRewards.GetActivities()` → `progress / threshold` per slot | Shows total filled slots; tooltip detail breaks out M+/Raid/World rows. |
+
+#### Group: Housing (12.0.5)
+
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Vaeli Housing Weekly** | binary | `IsQuestFlaggedCompleted` | Quest giver Vaeli, outside Silvermoon bank. Quest ID: TBD. |
+| **Ritual Sites** (12.0.5) | binary or progress (TBD) | `IsQuestFlaggedCompleted` *or* objective scan | Mechanic and quest gate TBD. |
+
+#### Group: Profession
+
+| Activity | Display | API | Notes |
+|---|---|---|---|
+| **Patron Orders / Profession KP** | `✓` per profession | `IsQuestFlaggedCompleted` × profession | One quest ID per crafting profession (per character). |
+
+**Out of scope (intentionally not tracked):** Decor Duels (no gear reward, low priority per icy-veins).
+
+**Event-driven pattern (applies to all rows above):**
 
 ```lua
 f:RegisterEvent("PLAYER_ENTERING_WORLD")   -- bulk init via GetAllCompletedQuestIDs()
@@ -100,19 +141,63 @@ Currency IDs to be resolved at implementation: Valorstone (3008 confirmed), know
 
 ```lua
 Broker_MidnightEventsDB = {
-    -- settings
+    -- top-level section toggles
     enabledSections  = { timers = true, weekly = true, alts = true },
-    enabledEvents    = { Abundance = true, Stormarion = true, ... },
-    sectionState     = { timers = "expanded", weekly = "expanded", alts = "collapsed" },
+    -- weekly sub-group toggles
+    enabledGroups    = { world = true, dungeons = true, pvp = true,
+                         activities = true, housing = true,
+                         profession = true, currencies = true },
+    -- per-row toggles (keys match activity slugs)
+    enabledRows      = { prey = true, bosses = true, soiree = true,
+                         stormarion = true, haranir = true,
+                         voidStrikes = true, voidIncursion = true,
+                         liadrin = true, voidforge = true,
+                         silvermoonDungeon = true, bountifulDelve = true,
+                         t11Delve = true, mythicPlus = true,
+                         callForBattle = true, vault = true,
+                         vaeliHousing = true, ritualSites = true,
+                         -- patronOrders.<profID> per crafting profession
+                       },
+    -- per-event toggles (Tier 1 timers)
+    enabledEvents    = { abundance = true, stormarionAssault = true,
+                         slayersRise = true, bountifulDelveDaily = true,
+                         voidAssaultZone = true },
+    -- collapse state per section + sub-group
+    sectionState     = { timers = "expanded", weekly = "expanded",
+                         alts = "collapsed",
+                         ["weekly.world"] = "expanded",
+                         ["weekly.dungeons"] = "expanded",
+                         ["weekly.pvp"] = "collapsed",
+                         ["weekly.activities"] = "expanded",
+                         ["weekly.housing"] = "collapsed",
+                         ["weekly.profession"] = "collapsed",
+                         ["weekly.currencies"] = "collapsed" },
     -- per-character progress snapshot (keyed by "realm/charname")
     chars = {
         ["Realm/CharName"] = {
             weeklyReset     = 0,          -- epoch of the reset this data covers
+            lastLogin       = 0,          -- for stale/archive detection
             questsDone      = {},         -- set of questIDs completed this week
+            preyProgress    = { N = 0, H = 0, NM = 0 },  -- Prey hunt counts per tier
             worldBossesDone = {},         -- set of worldBossIDs with active lockout
             vaultProgress   = {},         -- from C_WeeklyRewards, snapshot on login
+            mythicPlusBest  = 0,          -- best +keystone level this week
             currencies      = {},         -- weekly caps snapshot
+            professions     = {},         -- which profession patron quests done
         },
+    },
+    -- characters the user has explicitly hidden from alt panel
+    hiddenChars = {},                     -- set of "Realm/CharName" keys
+    -- alts detail panel geometry/preferences
+    altsPanel = {
+        width = 600, height = 400, x = 0, y = 0,
+        sort = "lastLogin", filter = "all", showArchived = false,
+        staleThresholdDays = 30,
+    },
+    -- broker bar / display preferences
+    display = {
+        brokerStyle    = "name+countdown",  -- "countdown" | "name+countdown" | "urgent"
+        tooltipRefresh = 5,                  -- seconds while tooltip open
     },
     -- minimap icon position
     minimapIcon = { hide = false },
@@ -136,36 +221,140 @@ Broker text refresh:
 - 60-second `OnUpdate` ticker for countdown decrement while tooltip is closed
 - 5-second refresh while the tooltip is open
 
+## Tooltip Section Hierarchy
+
+The tooltip has three top-level sections. The middle section (**This Week**) splits into named sub-groups so it stays readable as the activity count grows. Every section and every sub-group is independently collapsible (state persisted in `db.sectionState`); shift-click a header to toggle.
+
+The Settings panel mirrors this hierarchy exactly: each section, sub-group, and individual row has a corresponding toggle. Disabling a sub-group hides the whole block in the tooltip; disabling a single row hides just that row.
+
+```
+1. Timed Events                          (Tier 1)
+2. This Week  (CharName)                 (Tier 2 + Tier 3)
+   ├─ World
+   ├─ Dungeons & Voidforge
+   ├─ PvP
+   ├─ Activities
+   ├─ Housing
+   ├─ Profession
+   └─ Currencies                         (Tier 3 — weekly-capped currency progress)
+3. Alts                                  (roll-up summary; detail view detached)
+```
+
 ## Tooltip Layout
 
 ```
 ┌─ Timed Events ──────────────────────────────────┐
-│  [icon] Abundance          now! / 7h 44m        │
-│  [icon] Stormarion Assault  23m                 │
-│  [icon] Slayer's Rise       23m                 │
-│  [icon] Bountiful Delve     resets in 4h 11m    │
+│  [icon] Abundance              now! / 7h 44m    │
+│  [icon] Stormarion Assault     23m              │
+│  [icon] Slayer's Rise          23m              │
+│  [icon] Bountiful Delve        resets in 4h 11m │
+│  [icon] Void Assault           Eversong (week)  │
 ├─ This Week (CharName) ──────────────────────────┤
-│  ✓  Prey Hunts              4/4                 │
-│  ✗  World Boss: Lu'ashal                        │
-│  ✓  Saltheril's Soiree                          │
-│  ✗  Stand Your Ground       0/2                 │
-│  ✓  Legends of the Haranir  (warband)           │
-│     Great Vault             5/8                 │
-├─ Alts ──────────────────────────────────────────┤
-│  Thrandis    ✓ Prey  ✗ Boss  ✓ Soiree           │
-│  Miravel     ✗ Prey  ✗ Boss  ✗ Soiree           │
+│  ▼ World                                        │
+│      Prey Hunts        N 4/4 · H 4/4 · NM 3/3   │
+│      World Bosses      Lu'a ✓ · Crag ✗ · …      │
+│      Saltheril's Soiree                    ✓    │
+│      Stand Your Ground                     0/2  │
+│      Legends of the Haranir          (warband)  │
+│      Void Strikes                          5/8  │
+│      Void Incursion                        ✓    │
+│      Liadrin Weekly                        ✗    │
+│  ▼ Dungeons & Voidforge                         │
+│      Voidforge questline                   ✓    │
+│      Silvermoon Weekly Dungeon ⚠ TBD       ✗    │
+│      Bountiful Delve weekly                ✓    │
+│      T11 Delve weekly                      ✗    │
+│      M+ weekly best                        +8   │
+│  ▶ PvP                                          │
+│  ▶ Activities                  Vault 5/8        │
+│  ▶ Housing                                      │
+│  ▶ Profession                  3/4 done         │
+│  ▶ Currencies                                   │
+├─ Alts (12 tracked, 8 active this reset) ────────┤
+│  Prey hunts:    5/12 done                       │
+│  World Boss:    7/12 done                       │
+│  Soiree:        9/12 done                       │
+│  Vault filled:  3/12 done                       │
+│  Voidforge:     2/12 done                       │
+│  ▸ Shift-Right-click for detail panel           │
 └─────────────────────────────────────────────────┘
 ```
 
-Section state (collapsed/expanded) saved in `db.sectionState`. Shift-click a section header to toggle it.
+Sub-group headers show `▼` when expanded, `▶` when collapsed. Collapsed groups can show a one-line summary on the header line (e.g. "Activities ▶ Vault 5/8") so the user keeps the most important data visible without expanding.
+
+## Alts — Two-Mode Display
+
+Per-alt detail does not scale to altoholic users (15-30 chars). Two modes:
+
+### Mode 1: Roll-up summary (in tooltip, default)
+
+```
+Alts (12 tracked, 8 active this reset)
+   Prey hunts:    5/12 done
+   World Boss:    7/12 done
+   Soiree:        9/12 done
+   Vault filled:  3/12 done
+```
+
+Aggregates **enabled activity rows** across all tracked characters. Constant size regardless of alt count. "Active this reset" = logged in since the most recent weekly reset; characters with stale data are excluded from the denominator (so "5/12" reflects only fresh data).
+
+### Mode 2: Detail panel (detached frame, on demand)
+
+Triggered by **Shift-Right-Click** on the broker button (or a dedicated keybind). Opens a custom frame using the same template style as Broker_PlayerCoords' copy dialog (`BasicFrameTemplateWithInset`), but full-fledged: title bar, close button, scrollable rows.
+
+```
+┌─ Broker_MidnightEvents · Alts ────────────────────────[X]┐
+│ Filter: [All ▼]  Sort: [Last login ▼]   12 chars         │
+├──────────────────────────────────────────────────────────┤
+│ Char       Prey   Boss  Soir  Vault  Voidforge  …  scroll│
+│ Thrandis   12/12   ✓     ✓    8/8    ✓                ↑  │
+│ Miravel     8/12   ✗     ✗    5/8    ✗                █  │
+│ Tessadra    —      —     —    —      —                █  │
+│ Hawken     12/12   ✓     ✓    7/8    ✓                ▒  │
+│ … (scrollable)                                        ↓  │
+└──────────────────────────────────────────────────────────┘
+```
+
+UX rules:
+- **Class colour** on the character name column.
+- **Truncate** char names to ~10 chars with ellipsis if needed.
+- **Auto-stale**: chars not logged in since the current weekly reset → all cells render as `—` and the row is dimmed.
+- **Auto-archive**: chars not logged in for 30+ days are hidden by default. Filter "Show archived" reveals them.
+- **User-hide**: right-click a row → context menu "Don't track this character." Persisted in `db.hiddenChars`.
+- **Filter dropdown**: All / Tracked only / Active this reset / By realm / By class.
+- **Sort dropdown**: Last login (default) / Name / Most progress / Least progress.
+- **Column visibility** mirrors the enabled activity toggles. Disabling "Soiree" in Settings removes both the tooltip row *and* the alts column.
+- **Resizable**: user can drag the bottom-right corner to widen for more columns or taller for more rows. Geometry persisted.
+- **No hard row cap** — the scrollable list handles 30+ alts gracefully.
+
+### Frame implementation notes
+
+Use `ScrollFrame` + `FauxScrollFrame` pattern (Blizzard standard) to render only visible rows. For ~30 alts × ~15 columns this is well under any performance concern.
 
 ## Settings Panel
 
-Three categories, native WoW Settings API (matches Broker_PlayerCoords pattern):
+Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Three top-level categories, each with sub-headers matching the tooltip section hierarchy.
 
-- **Timed Events** — enable/disable each event type; show/hide "inactive" events (those not currently firing)
-- **Weekly Checklist** — enable/disable each activity row; toggle Patron Orders per-profession
-- **Display** — broker text style (countdown only vs. event name + countdown); alt panel max rows; tooltip refresh rate
+- **Timed Events**
+   - per-event toggle: Abundance, Stormarion Assault, Slayer's Rise, Bountiful Delve, Void Assault zone indicator
+   - "Show inactive events" master toggle (greys out events not currently firing)
+
+- **Weekly Checklist**
+   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Void Strikes, Void Incursion, Liadrin)
+      - Prey: optional toggles per tier (Normal/Hard/Nightmare)
+   - **Dungeons & Voidforge** sub-group toggle + per-row toggles (Voidforge, Silvermoon Weekly, Bountiful Delve, T11 Delve, M+ best)
+   - **PvP** sub-group toggle + per-row toggles (Call for Battle)
+   - **Activities** sub-group toggle + per-row toggles (Great Vault)
+   - **Housing** sub-group toggle + per-row toggles (Vaeli Weekly, Ritual Sites)
+   - **Profession** sub-group toggle + per-profession toggles (Patron Orders × N professions)
+   - **Currencies** sub-group toggle + per-currency toggles
+
+- **Display**
+   - Broker text style: countdown only / event name + countdown / urgent-only
+   - Tooltip refresh rate while open (5 s default)
+   - Alt summary mode: roll-up only / roll-up + detail-panel keybind
+   - Detail panel: max default rows, default sort, "show archived" default
+   - Stale threshold (days since login before character archives) — default 30
 
 ## API Reference (confirmed for Interface 120005)
 
@@ -189,16 +378,35 @@ Three categories, native WoW Settings API (matches Broker_PlayerCoords pattern):
 ## Recommended Build Sequence
 
 1. **Scaffold + Tier 1 POI timers** — broker text + live countdown tooltip section. Validates the `C_AreaPoiInfo` event loop and gives something usable immediately.
-2. **Tier 2 weekly checklist** — requires harvesting quest IDs from Wowhead for each activity; one-time data work.
-3. **Tier 3 currency caps** — additive; cheap to add.
-4. **Alt tracking** — own SavedVariables snapshot, populated passively over time.
-5. **Settings panel** — same pattern as Broker_PlayerCoords.
-6. **Minimap button + LibDBIcon registration** — already in scaffold; no extra work.
+2. **Tier 2 weekly checklist (Group: World)** — covers the bulk of activity tracking. Requires quest ID harvesting from Wowhead.
+3. **Tier 2 remaining groups** — Dungeons & Voidforge, PvP, Activities, Housing, Profession (in order of user value).
+4. **Tier 3 currency caps** — additive; cheap to add once Tier 2 is wired.
+5. **Alt tracking — Mode 1 (roll-up summary)** in tooltip. Cheap once Tier 2 is in.
+6. **Alt tracking — Mode 2 (detail panel frame)** with scroll, sort, filter, hide. Larger UI work; ship after rest is stable.
+7. **Settings panel** — same pattern as Broker_PlayerCoords; mirrors the tooltip hierarchy exactly.
+8. **Minimap button + LibDBIcon registration** — already in scaffold; no extra work.
 
-## Risks and Open Questions
+## Open Questions for Resolution
 
-- **Quest IDs are patch-fragile.** Each minor patch can change quest IDs. Maintain a single table at the top of `Core.lua` for easy per-patch updates.
+Items marked `⚠ TBD` in the tier tables above need quest IDs and quest givers identified before they can be wired in. Each row resolves to a single `IsQuestFlaggedCompleted` call once the questID is known.
+
+| # | Item | What's needed |
+|---|---|---|
+| 1 | **Silvermoon Weekly Dungeon Quest** | Quest giver location in Silvermoon City; quest ID; whether it's a single static quest with a rotating dungeon target or one of N quests per week. **User to look up on Wowhead.** |
+| 2 | **Call for Battle (PvP weekly)** | Quest giver; quest ID; precise objective ("N Training Battlegrounds" per user, but objective count TBD). **User to look up on Wowhead.** |
+| 3 | **Stormarion Assault weekly quest** | Confirm whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection. |
+| 4 | **Lady Liadrin Weekly World Event** | Quest ID; confirm it's the canonical "weekly world event" line and not redundant with another row. |
+| 5 | **Voidforge questline weekly gate** | Which specific quest in the chain is the weekly cap? (Whole chain vs single quest per week.) |
+| 6 | **Vaeli Housing Weekly** | Quest ID. |
+| 7 | **Ritual Sites** | Mechanic detail; whether progress is gated by a quest, an objective bar, or completion vignettes. |
+| 8 | **Void Strikes weekly cap source** | Whether progress reads from a quest objective or from `Field Accolades` currency cap (`quantityEarnedThisWeek`). |
+| 9 | **Patron Order quest IDs per profession** | One quest ID per crafting profession (8 professions). |
+| 10 | **Prey Hunt quest IDs** | 12 IDs total (4 zones × 3 tiers); plus the Nightmare-3-hunts weekly quest ID. |
+
+## General Risks
+
+- **Quest IDs are patch-fragile.** Each minor patch can change quest IDs. Maintain a single table at the top of `Core.lua` for easy per-patch updates. Consider a `MAJOR_PATCH_REQUIRES_REVIEW` flag check that warns the user in chat once when the build's interface version is below the running game's.
 - **POI ID stability across zones.** `GetEventsForMap` is the right approach precisely because POI IDs may shift; we filter by `isCurrentEvent` and read names/icons live.
-- **Stormarion Assault weekly quest count uncertain.** Sources disagree on whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection at implementation.
 - **World boss rotation model uncertain.** Whether all four bosses are simultaneously available per week or rotate. `GetSavedWorldBossInfo` will report the truth at runtime regardless; no preflight assumption needed.
 - **Bountiful Delve markers.** The daily-rotating "Bountiful" marker is a POI but we need to confirm it appears in `GetEventsForMap` (vs. `GetDelvesForMap`).
+- **Void Assault active-zone detection.** No public timer expected (week-long indicator), so likely inferred from which zone has active Void Strike POIs in `GetEventsForMap`. Validate at implementation.
