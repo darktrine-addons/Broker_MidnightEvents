@@ -73,9 +73,7 @@ Binary done/not-done checks with no live countdown. Refresh on login and on `QUE
 | **Saltheril's Soiree** ("Fortify the Runestones") | binary `✓ / ✗` | `IsQuestFlaggedCompleted` | Eversong runestone weekly. Quest ID: TBD. |
 | **Stormarion Assault weekly** ("Stand Your Ground") | `0/2` or `0/1` (TBD) | `IsQuestFlaggedCompleted` | Voidstorm. Required-runs-per-week TBD. |
 | **Legends of the Haranir** (warband) | binary | `IsQuestFlaggedCompleted` | Solo scenario. |
-| **Void Strikes weekly** (12.0.5) | progress (cap TBD) | `IsQuestFlaggedCompleted` *or* objective scan | Field Accolades currency cap is an alternative tracking source. |
-| **Void Incursion** (12.0.5) — completed this week | binary | `IsQuestFlaggedCompleted` | Single binary check. |
-| **Lady Liadrin Weekly World Event** | binary | `IsQuestFlaggedCompleted` | Spark reward. Quest ID: TBD. |
+| **Midnight: Void Assaults** (Lady Liadrin weekly) | binary or objective progress | `IsQuestFlaggedCompleted` *or* `C_QuestLog.GetQuestObjectives` | Quest giver: Lady Liadrin. Rewards a Spark (likely feeds Voidforge). Single weekly umbrella; Strikes/Incursions presumably contribute to its objectives — confirm objective format at implementation. Quest ID: TBD. |
 
 #### Group: Dungeons & Voidforge
 
@@ -91,7 +89,7 @@ Binary done/not-done checks with no live countdown. Refresh on login and on `QUE
 
 | Activity | Display | API | Notes |
 |---|---|---|---|
-| **Call for Battle** ⚠ TBD | binary | `IsQuestFlaggedCompleted` | PvP weekly; appears to require Training Battlegrounds (per user). **Quest giver and quest ID need Wowhead lookup.** |
+| **A Call to Battle** | `0/4` BG wins | `C_QuestLog.GetQuestObjectives` (or `IsQuestFlaggedCompleted` for binary) | Quest giver: Archmage Aethas Sunreaver. Objective: Win 4 Battleground matches. Rewards: 5 Mark of Honor + 175 Conquest. Quest ID: TBD. |
 
 #### Group: Activities
 
@@ -150,11 +148,11 @@ Broker_MidnightEventsDB = {
     -- per-row toggles (keys match activity slugs)
     enabledRows      = { prey = true, bosses = true, soiree = true,
                          stormarion = true, haranir = true,
-                         voidStrikes = true, voidIncursion = true,
-                         liadrin = true, voidforge = true,
+                         voidAssaults = true,         -- Lady Liadrin weekly
+                         voidforge = true,
                          silvermoonDungeon = true, bountifulDelve = true,
                          t11Delve = true, mythicPlus = true,
-                         callForBattle = true, vault = true,
+                         callToBattle = true, vault = true,
                          vaeliHousing = true, ritualSites = true,
                          -- patronOrders.<profID> per crafting profession
                        },
@@ -256,9 +254,7 @@ The Settings panel mirrors this hierarchy exactly: each section, sub-group, and 
 │      Saltheril's Soiree                    ✓    │
 │      Stand Your Ground                     0/2  │
 │      Legends of the Haranir          (warband)  │
-│      Void Strikes                          5/8  │
-│      Void Incursion                        ✓    │
-│      Liadrin Weekly                        ✗    │
+│      Midnight: Void Assaults  (Liadrin) 5/8     │
 │  ▼ Dungeons & Voidforge                         │
 │      Voidforge questline                   ✓    │
 │      Silvermoon Weekly Dungeon ⚠ TBD       ✗    │
@@ -340,10 +336,10 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
    - "Show inactive events" master toggle (greys out events not currently firing)
 
 - **Weekly Checklist**
-   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Void Strikes, Void Incursion, Liadrin)
+   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Midnight: Void Assaults)
       - Prey: optional toggles per tier (Normal/Hard/Nightmare)
    - **Dungeons & Voidforge** sub-group toggle + per-row toggles (Voidforge, Silvermoon Weekly, Bountiful Delve, T11 Delve, M+ best)
-   - **PvP** sub-group toggle + per-row toggles (Call for Battle)
+   - **PvP** sub-group toggle + per-row toggles (A Call to Battle)
    - **Activities** sub-group toggle + per-row toggles (Great Vault)
    - **Housing** sub-group toggle + per-row toggles (Vaeli Weekly, Ritual Sites)
    - **Profession** sub-group toggle + per-profession toggles (Patron Orders × N professions)
@@ -393,13 +389,13 @@ Items marked `⚠ TBD` in the tier tables above need quest IDs and quest givers 
 | # | Item | What's needed |
 |---|---|---|
 | 1 | **Silvermoon Weekly Dungeon Quest** | Quest giver location in Silvermoon City; quest ID; whether it's a single static quest with a rotating dungeon target or one of N quests per week. **User to look up on Wowhead.** |
-| 2 | **Call for Battle (PvP weekly)** | Quest giver; quest ID; precise objective ("N Training Battlegrounds" per user, but objective count TBD). **User to look up on Wowhead.** |
+| 2 | ~~Call for Battle (PvP weekly)~~ | **Resolved (in-game inspection, May 2026):** Quest is **"A Call to Battle"** from **Archmage Aethas Sunreaver**. Objective: Win 4 Battleground matches (regular BGs, not Training). Rewards: 5 Mark of Honor + 175 Conquest. Quest ID still TBD. |
 | 3 | **Stormarion Assault weekly quest** | Confirm whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection. |
-| 4 | **Lady Liadrin Weekly World Event** | Quest ID; confirm it's the canonical "weekly world event" line and not redundant with another row. |
+| 4 | ~~Lady Liadrin Weekly World Event~~ | **Resolved (user, May 2026):** Lady Liadrin's weekly is "Midnight: Void Assaults" — the canonical Void Assault umbrella. Consolidated with Strikes/Incursion into one row. Quest ID still TBD. |
 | 5 | **Voidforge questline weekly gate** | Which specific quest in the chain is the weekly cap? (Whole chain vs single quest per week.) |
 | 6 | **Vaeli Housing Weekly** | Quest ID. |
 | 7 | **Ritual Sites** | Mechanic detail; whether progress is gated by a quest, an objective bar, or completion vignettes. |
-| 8 | **Void Strikes weekly cap source** | Whether progress reads from a quest objective or from `Field Accolades` currency cap (`quantityEarnedThisWeek`). |
+| 8 | **Midnight: Void Assaults objective format** | Whether the weekly is binary completion or has an objective bar (e.g. "complete N Strikes / 1 Incursion"). Use `C_QuestLog.GetQuestObjectives(questID)` once quest ID is known. |
 | 9 | **Patron Order quest IDs per profession** | One quest ID per crafting profession (8 professions). |
 | 10 | **Prey Hunt quest IDs** | 12 IDs total (4 zones × 3 tiers); plus the Nightmare-3-hunts weekly quest ID. |
 
