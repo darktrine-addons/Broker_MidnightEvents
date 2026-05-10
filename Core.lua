@@ -263,39 +263,86 @@ local function BuildTooltip()
     end
 
     -- ── Section 2: This Week (CharName) ───────────────────────────────────────
-    -- Header is shown if any of the rows below would render. World boss row
-    -- and binary weeklies share the same green/grey done-vs-available logic:
-    -- green ✗ for outstanding, grey ✓ (or boss name) for completed.
+    -- Outstanding rows render at the top in white with an orange ✗ icon (or
+    -- green 'available' for the world boss, where we want a positive prompt
+    -- to check the map rather than a nag). Done rows fall to the bottom in
+    -- dim grey with a green ✓ icon. The section header carries an at-a-glance
+    -- 'X/Y done' summary so the player knows the status without scanning.
     local showWB = not ns.db or ns.db.showWorldBosses ~= false
     local hasWeeklies = ns.weeklies and #ns.weeklies > 0
     if showWB or hasWeeklies then
-        local charName = UnitName("player") or "?"
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
+        local CHECK = "|A:common-icon-checkmark:14:14|a"
+        local CROSS = "|A:common-icon-redx:14:14|a"
 
+        local wb = ns.char and ns.char.worldBoss or {}
+        local weeklyState = ns.char and ns.char.weeklies or {}
+
+        -- Build a unified row list so outstanding-first sort applies uniformly.
+        local rows = {}
         if showWB then
-            local wb = ns.char and ns.char.worldBoss or {}
-            if wb.done then
-                GameTooltip:AddDoubleLine("World Boss",
-                    wb.name or "killed",
-                    CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
-            else
-                GameTooltip:AddDoubleLine("World Boss", "available",
-                    CV_r, CV_g, CV_b, 0.30, 0.85, 0.30)
+            rows[#rows + 1] = {
+                label       = "World Boss",
+                done        = wb.done or false,
+                isWorldBoss = true,
+                bossName    = wb.name,
+            }
+        end
+        if hasWeeklies then
+            for _, w in ipairs(ns.weeklies) do
+                rows[#rows + 1] = {
+                    label = w.label,
+                    done  = weeklyState[w.key] or false,
+                }
             end
         end
 
-        if hasWeeklies then
-            local weeklies = ns.char and ns.char.weeklies or {}
-            for _, w in ipairs(ns.weeklies) do
-                if weeklies[w.key] then
-                    GameTooltip:AddDoubleLine(w.label, "\226\156\147",  -- ✓
-                        CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+        -- Header with completion summary.
+        local total, done = #rows, 0
+        for _, r in ipairs(rows) do if r.done then done = done + 1 end end
+        local summary = done .. "/" .. total .. " done"
+        local sr, sg, sb = CV_r, CV_g, CV_b
+        if done == total then sr, sg, sb = 0.6, 0.6, 0.6 end  -- fully done
+
+        local charName = UnitName("player") or "?"
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddDoubleLine("This Week (" .. charName .. ")", summary,
+            CL_r, CL_g, CL_b, sr, sg, sb)
+
+        -- Stable sort: outstanding before done, original order within each group.
+        local indexed = {}
+        for i, r in ipairs(rows) do indexed[i] = { row = r, idx = i } end
+        table.sort(indexed, function(a, b)
+            if a.row.done ~= b.row.done then return not a.row.done end
+            return a.idx < b.idx
+        end)
+
+        for _, s in ipairs(indexed) do
+            local r = s.row
+            local labelR, labelG, labelB
+            local valueText, vR, vG, vB
+
+            if r.done then
+                -- Done: dim grey label, green checkmark, plus boss name when relevant.
+                labelR, labelG, labelB = 0.55, 0.55, 0.55
+                if r.isWorldBoss and r.bossName then
+                    valueText = CHECK .. "  " .. r.bossName
                 else
-                    GameTooltip:AddDoubleLine(w.label, "\226\156\151",  -- ✗
-                        CV_r, CV_g, CV_b, CH_r, CH_g, CH_b)
+                    valueText = CHECK
                 end
+                vR, vG, vB = 0.6, 0.6, 0.6
+            elseif r.isWorldBoss then
+                -- World boss outstanding: special green 'available' instead of ✗.
+                labelR, labelG, labelB = CV_r, CV_g, CV_b
+                valueText = "available"
+                vR, vG, vB = 0.30, 0.85, 0.30
+            else
+                -- Weekly outstanding: white label, orange ✗.
+                labelR, labelG, labelB = CV_r, CV_g, CV_b
+                valueText = CROSS
+                vR, vG, vB = CH_r, CH_g, CH_b
             end
+            GameTooltip:AddDoubleLine(r.label, valueText,
+                labelR, labelG, labelB, vR, vG, vB)
         end
     end
 
