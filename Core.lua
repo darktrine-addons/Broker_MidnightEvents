@@ -141,13 +141,18 @@ local function UpdateBrokerText()
 
     if soonest then
         local short = ShortName(soonest.name)
+        local body, hex
         if soonestRem and soonestRem <= 0 then
-            broker.text = short .. "  now!"
+            body = short .. "  now!"
+            hex  = "ff9919"                       -- orange (now firing)
         elseif soonest.pending then
-            broker.text = short .. " in " .. FormatRemaining(soonestRem)
+            body = short .. " in " .. FormatRemaining(soonestRem)
+            hex  = soonestRem < 5 * 60 and "ff9919" or "a6bff2"  -- urgent / soft blue
         else
-            broker.text = short .. "  " .. FormatRemaining(soonestRem) .. " left"
+            body = short .. "  " .. FormatRemaining(soonestRem) .. " left"
+            hex  = soonestRem < 5 * 60 and "ff9919" or "ffffff"  -- urgent / white
         end
+        broker.text = "|cff" .. hex .. body .. "|r"
     else
         broker.text = "Midnight Events"
     end
