@@ -58,6 +58,22 @@ local function CurrentRemaining(ev)
     return ev.expiresAt - GetTime()
 end
 
+-- Visibility filter applied uniformly across broker text and tooltip rendering.
+-- Honors per-event toggles and the "hide distant events" master switch.
+local function IsVisible(ev)
+    local db = ns.db
+    if not db then return true end
+    local key = ns.GetEventToggleKey and ns.GetEventToggleKey(ev.name)
+    if key and db.events and db.events[key] == false then
+        return false
+    end
+    if db.hideDistant then
+        local rem = CurrentRemaining(ev)
+        if rem and rem > 24 * 3600 then return false end
+    end
+    return true
+end
+
 -- Scan one map for current-event POIs; append to `out`, dedupe via `seenPOIs`.
 local function ScanMap(mapID, out, seenPOIs)
     if not mapID then return end
@@ -133,9 +149,11 @@ end
 local function UpdateBrokerText()
     local soonest, soonestRem
     for _, ev in ipairs(activeEvents) do
-        local rem = CurrentRemaining(ev)
-        if rem and (not soonestRem or rem < soonestRem) then
-            soonest, soonestRem = ev, rem
+        if IsVisible(ev) then
+            local rem = CurrentRemaining(ev)
+            if rem and (not soonestRem or rem < soonestRem) then
+                soonest, soonestRem = ev, rem
+            end
         end
     end
 
@@ -168,10 +186,15 @@ local function BuildTooltip()
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Timed Events", CL_r, CL_g, CL_b)
 
-    if #activeEvents == 0 then
+    local visible = {}
+    for _, ev in ipairs(activeEvents) do
+        if IsVisible(ev) then visible[#visible + 1] = ev end
+    end
+
+    if #visible == 0 then
         GameTooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        for _, ev in ipairs(activeEvents) do
+        for _, ev in ipairs(visible) do
             local label = ev.atlas
                           and ("|A:" .. ev.atlas .. ":16:16|a " .. ev.name)
                           or  ev.name
@@ -204,23 +227,26 @@ local function BuildTooltip()
     end
 
     -- ── Section 2: This Week (CharName) ───────────────────────────────────────
-    local charName = UnitName("player") or "?"
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
+    local showWB = not ns.db or ns.db.showWorldBosses ~= false
+    if showWB then
+        local charName = UnitName("player") or "?"
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
 
-    -- World Bosses — list locked names for the active char, or "none yet" when zero.
-    local bossLabel = "World Bosses"
-    local bosses    = ns.char and ns.char.worldBossesDone or {}
-    local names     = {}
-    for _, n in pairs(bosses) do names[#names + 1] = n end
-    table.sort(names)
-    if #names == 0 then
-        GameTooltip:AddDoubleLine(bossLabel, "none yet",
-                                  CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
-    else
-        local value = table.concat(names, " \194\183 ") .. "  (" .. #names .. ")"
-        GameTooltip:AddDoubleLine(bossLabel, value,
-                                  CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+        -- World Bosses — list locked names, or "none yet" when zero.
+        local bossLabel = "World Bosses"
+        local bosses    = ns.char and ns.char.worldBossesDone or {}
+        local names     = {}
+        for _, n in pairs(bosses) do names[#names + 1] = n end
+        table.sort(names)
+        if #names == 0 then
+            GameTooltip:AddDoubleLine(bossLabel, "none yet",
+                                      CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+        else
+            local value = table.concat(names, " \194\183 ") .. "  (" .. #names .. ")"
+            GameTooltip:AddDoubleLine(bossLabel, value,
+                                      CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+        end
     end
 
     -- ── Footer ────────────────────────────────────────────────────────────────
@@ -245,6 +271,21 @@ end
 broker.OnLeave = function(self)
     tooltipOwner = nil
     GameTooltip:Hide()
+end
+
+broker.OnClick = function(self, button)
+    if button == "RightButton" and IsShiftKeyDown() and ns.settingsCategoryID then
+        Settings.OpenToCategory(ns.settingsCategoryID)
+    end
+end
+
+-- Exposed so Settings.lua callbacks can refresh both surfaces immediately
+-- after a toggle changes.
+ns.UpdateBrokerText = UpdateBrokerText
+function ns.RebuildTooltipIfOpen()
+    if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+        BuildTooltip()
+    end
 end
 
 -- ── event frame ───────────────────────────────────────────────────────────────
