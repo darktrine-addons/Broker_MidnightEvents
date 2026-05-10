@@ -73,13 +73,16 @@ ns.eventToggles = {
 -- Each entry maps to one row in the tooltip's "This Week" section. The order
 -- here is the rendering order. `questID` is checked via IsQuestFlaggedCompleted
 -- on PEW + QUEST_TURNED_IN + QUEST_REMOVED.
+--
+-- NOTE: the `Midnight: <X>` umbrella quests we initially used (93889 Saltheril,
+-- 93892 Stormarion, 93909 Delves, 94457 Battlegrounds, 95842 Void Assaults)
+-- turned out to be one-time intro/unlock quests, not weekly trackers. They
+-- flag permanently after first engagement with each event, so every character
+-- who ever touched the content reads as "done forever." Removed pending a
+-- harvest cycle of the actual weekly IDs (accept the quest on a char, /reload,
+-- DevHarvest captures the live ID).
 ns.weeklies = {
-    { key = "soiree",            questID = 93889, label = "Saltheril's Soiree" },
-    { key = "stormarionWeekly",  questID = 93892, label = "Stormarion Assault" },
-    { key = "bountifulWeekly",   questID = 93909, label = "Bountiful Delve"    },
-    { key = "voidAssaultWeekly", questID = 95842, label = "Void Assaults"      },
-    { key = "callToBattle",      questID = 94457, label = "A Call to Battle"   },
-    { key = "haranir",           questID = 89268, label = "Lost Legends"       },
+    { key = "haranir", questID = 89268, label = "Lost Legends" },
 }
 
 -- ── World boss credit quests ──────────────────────────────────────────────────
