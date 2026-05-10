@@ -54,8 +54,10 @@ end
 
 -- ── active events ─────────────────────────────────────────────────────────────
 -- Rebuilt on AREA_POIS_UPDATED. Each entry:
---   { mapID, poiID, name, atlas, secs, expiresAt }
+--   { mapID, poiID, name, atlas, secs, expiresAt, pending }
 -- secs / expiresAt are nil for events that aren't timed (zone-week markers).
+-- `pending` is true when secs is "time until next firing" (schedule fallback);
+-- false/nil when secs is "time until current run ends" (server-pushed).
 local activeEvents = {}
 local tooltipOwner  -- set while our tooltip is being shown; nil otherwise
 
@@ -90,19 +92,21 @@ local function ScanMap(mapID, out, seenPOIs)
         if not seenPOIs[poiID] then
             local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
             if info and info.isCurrentEvent then
-                local secs
+                local secs, pending
                 if C_AreaPoiInfo.IsAreaPOITimed(poiID) then
                     secs = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
                 end
                 if not secs then
-                    secs = ScheduleFallbackSecs(info.name)
+                    secs    = ScheduleFallbackSecs(info.name)
+                    pending = secs ~= nil
                 end
                 local entry = {
-                    mapID = mapID,
-                    poiID = poiID,
-                    name  = info.name or "Event",
-                    atlas = info.atlasName,
-                    secs  = secs,
+                    mapID   = mapID,
+                    poiID   = poiID,
+                    name    = info.name or "Event",
+                    atlas   = info.atlasName,
+                    secs    = secs,
+                    pending = pending,
                 }
                 if secs then entry.expiresAt = GetTime() + secs end
                 out[#out + 1] = entry
@@ -164,8 +168,10 @@ local function UpdateBrokerText()
         local short = ShortName(soonest.name)
         if soonestRem and soonestRem <= 0 then
             broker.text = short .. "  now!"
+        elseif soonest.pending then
+            broker.text = short .. " in " .. FormatRemaining(soonestRem)
         else
-            broker.text = short .. "  " .. FormatRemaining(soonestRem)
+            broker.text = short .. "  " .. FormatRemaining(soonestRem) .. " left"
         end
     else
         broker.text = "Midnight Events"
@@ -196,10 +202,19 @@ local function BuildTooltip()
                 valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
             elseif rem <= 0 then
                 valueText, vr, vg, vb = "now!", CH_r, CH_g, CH_b
-            else
-                valueText = FormatRemaining(rem)
+            elseif ev.pending then
+                -- Time until the event next starts.
+                valueText = "in " .. FormatRemaining(rem)
                 if rem < 5 * 60 then
-                    vr, vg, vb = CH_r, CH_g, CH_b      -- urgent: < 5m
+                    vr, vg, vb = CH_r, CH_g, CH_b      -- about to fire
+                else
+                    vr, vg, vb = 0.65, 0.75, 0.95      -- soft blue: future
+                end
+            else
+                -- Time until the currently-running event expires.
+                valueText = FormatRemaining(rem) .. " left"
+                if rem < 5 * 60 then
+                    vr, vg, vb = CH_r, CH_g, CH_b      -- about to expire
                 else
                     vr, vg, vb = CV_r, CV_g, CV_b
                 end
