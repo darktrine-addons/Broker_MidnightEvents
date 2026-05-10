@@ -35,14 +35,20 @@ local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437 }
 local activeEvents = {}
 local tooltipOwner  -- set while our tooltip is being shown; nil otherwise
 
--- Compact remaining-time formatter: "now", "45s", "23m", "3h 12m".
+-- Compact remaining-time formatter: "now", "45s", "23m", "3h 12m", "2d 7h 18m".
 local function FormatRemaining(secs)
-    if not secs or secs <= 0   then return "now"                              end
-    if secs < 60               then return math.floor(secs) .. "s"            end
-    if secs < 60 * 60          then return math.floor(secs / 60) .. "m"       end
-    local h = math.floor(secs / 3600)
+    if not secs or secs <= 0  then return "now"                        end
+    if secs < 60              then return math.floor(secs) .. "s"      end
+    if secs < 3600            then return math.floor(secs / 60) .. "m" end
+    if secs < 86400 then
+        local h = math.floor(secs / 3600)
+        local m = math.floor((secs % 3600) / 60)
+        return h .. "h " .. m .. "m"
+    end
+    local d = math.floor(secs / 86400)
+    local h = math.floor((secs % 86400) / 3600)
     local m = math.floor((secs % 3600) / 60)
-    return h .. "h " .. m .. "m"
+    return d .. "d " .. h .. "h " .. m .. "m"
 end
 
 -- Live remaining time for a stored event (uses expiresAt to count down without re-scan).
@@ -97,6 +103,25 @@ local function RefreshActiveEvents()
     end)
 end
 
+-- ── world boss lockouts ───────────────────────────────────────────────────────
+-- GetSavedWorldBossInfo only enumerates LOCKED bosses (i.e. already killed this
+-- week). The full per-week roster (and which are spawned in any given week)
+-- isn't exposed by the public API, so the tooltip only shows the kills we can
+-- prove. UPDATE_INSTANCE_INFO is the canonical "raid lockout state changed"
+-- signal; we kick a refresh on PEW and a delayed one on BOSS_KILL.
+
+local function RefreshWorldBosses()
+    if not ns.char or not GetNumSavedWorldBosses then return end
+    local locked = {}
+    for i = 1, GetNumSavedWorldBosses() do
+        local name, instanceID, reset = GetSavedWorldBossInfo(i)
+        if name and reset and reset > 0 then
+            locked[tostring(instanceID or name)] = name
+        end
+    end
+    ns.char.worldBossesDone = locked
+end
+
 -- ── broker text ───────────────────────────────────────────────────────────────
 
 local function UpdateBrokerText()
@@ -124,6 +149,8 @@ end
 local function BuildTooltip()
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
+
+    -- ── Section 1: Timed Events ───────────────────────────────────────────────
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Timed Events", CL_r, CL_g, CL_b)
 
@@ -153,6 +180,27 @@ local function BuildTooltip()
         end
     end
 
+    -- ── Section 2: This Week (CharName) ───────────────────────────────────────
+    local charName = UnitName("player") or "?"
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
+
+    -- World Bosses — list locked names for the active char, or "none yet" when zero.
+    local bossLabel = "World Bosses"
+    local bosses    = ns.char and ns.char.worldBossesDone or {}
+    local names     = {}
+    for _, n in pairs(bosses) do names[#names + 1] = n end
+    table.sort(names)
+    if #names == 0 then
+        GameTooltip:AddDoubleLine(bossLabel, "none yet",
+                                  CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+    else
+        local value = table.concat(names, " \194\183 ") .. "  (" .. #names .. ")"
+        GameTooltip:AddDoubleLine(bossLabel, value,
+                                  CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+    end
+
+    -- ── Footer ────────────────────────────────────────────────────────────────
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("", "Broker: MidnightEvents  v" .. addonVersion,
                               0, 0, 0, 0.45, 0.45, 0.45)
@@ -181,10 +229,24 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("AREA_POIS_UPDATED")
+f:RegisterEvent("UPDATE_INSTANCE_INFO")
+f:RegisterEvent("BOSS_KILL")
 
 f:SetScript("OnEvent", function(self, event)
-    RefreshActiveEvents()
-    UpdateBrokerText()
+    if event == "BOSS_KILL" then
+        -- Server takes a moment to register the lockout; ask for fresh raid
+        -- info shortly, which will fire UPDATE_INSTANCE_INFO.
+        if RequestRaidInfo then C_Timer.After(2, RequestRaidInfo) end
+        return
+    end
+
+    if event == "PLAYER_ENTERING_WORLD" or event == "AREA_POIS_UPDATED" then
+        RefreshActiveEvents()
+        UpdateBrokerText()
+    end
+    if event == "PLAYER_ENTERING_WORLD" or event == "UPDATE_INSTANCE_INFO" then
+        RefreshWorldBosses()
+    end
     if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
         BuildTooltip()
     end
