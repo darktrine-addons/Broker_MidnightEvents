@@ -86,12 +86,19 @@ ns.weeklies = {
 }
 
 -- ── World boss credit quests ──────────────────────────────────────────────────
--- Midnight world bosses register completion via quest credit, not raid lockouts
--- (which is why GetSavedWorldBossInfo never populated). The umbrella questID
--- below flips when ANY world boss has been killed this week; the per-boss
--- entries identify which one.
-ns.worldBossWeekly = 93913   -- "Midnight: World Boss" umbrella
-
+-- Midnight world bosses register completion via per-boss kill-credit quests,
+-- not raid lockouts (which is why GetSavedWorldBossInfo never populated).
+-- Iterate this table; the first questID flagged completed identifies the
+-- boss this character has killed.
+--
+-- The 93913 'Midnight: World Boss' umbrella we tried earlier turned out to
+-- be a one-time intro quest in the same family as the binary-weekly intros
+-- we removed — it flagged on Shatanaris even though Shatanaris had killed
+-- nothing this week. Don't reintroduce it.
+--
+-- Whether the per-boss credits below reset on the weekly clock is still
+-- unverified; will be confirmed at the next reset. If they turn out to be
+-- achievement-style (never reset) we'll need a different approach entirely.
 ns.worldBosses = {
     { name = "Lu'ashal",    questID = 92560 },
     { name = "Cragpine",    questID = 92123 },

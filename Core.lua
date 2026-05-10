@@ -161,23 +161,20 @@ local function RefreshWeeklies()
         ns.char.weeklies[w.key] = C_QuestLog.IsQuestFlaggedCompleted(w.questID) or false
     end
 
-    -- World boss: umbrella tells us "any boss killed this week"; the per-boss
-    -- credit table tells us WHICH. Stored as { done, name } where name is nil
-    -- if the umbrella fired but no per-boss credit matched (e.g. a boss whose
-    -- credit ID we haven't catalogued yet).
-    local umbrella = ns.worldBossWeekly
-                     and C_QuestLog.IsQuestFlaggedCompleted(ns.worldBossWeekly)
-                     or false
+    -- World boss: per-boss credit IDs are the source of truth. The earlier
+    -- approach of using the 93913 'Midnight: World Boss' umbrella as a single
+    -- boolean gave false positives — that umbrella behaves like the rest of
+    -- the 'Midnight: <X>' family (one-time intro/unlock that flags as soon as
+    -- a char first engages, never resets), so it would mark every alt that
+    -- has ever interacted with world-boss content as "done."
     local bossName
-    if umbrella then
-        for _, b in ipairs(ns.worldBosses or {}) do
-            if C_QuestLog.IsQuestFlaggedCompleted(b.questID) then
-                bossName = b.name
-                break
-            end
+    for _, b in ipairs(ns.worldBosses or {}) do
+        if C_QuestLog.IsQuestFlaggedCompleted(b.questID) then
+            bossName = b.name
+            break
         end
     end
-    ns.char.worldBoss = { done = umbrella, name = bossName }
+    ns.char.worldBoss = { done = bossName ~= nil, name = bossName }
 end
 
 -- ── broker text ───────────────────────────────────────────────────────────────
