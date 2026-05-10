@@ -16,6 +16,7 @@ local defaults = {
     },
     hideDistant     = true,    -- hide events firing more than 24h away
     showWorldBosses = true,    -- show World Bosses row in This Week section
+    showAltSummary  = true,    -- show Alts roll-up section
 }
 
 -- Returns the epoch (seconds) of the most recent weekly reset, or nil if the
@@ -51,6 +52,7 @@ sf:SetScript("OnEvent", function(self, event, name)
     end
     if db.hideDistant     == nil then db.hideDistant     = defaults.hideDistant     end
     if db.showWorldBosses == nil then db.showWorldBosses = defaults.showWorldBosses end
+    if db.showAltSummary  == nil then db.showAltSummary  = defaults.showAltSummary  end
     ns.db = db
 
     -- Per-character bootstrap. Key is "Realm/Name" so connected realms with
@@ -120,6 +122,19 @@ sf:SetScript("OnEvent", function(self, event, name)
     wbSetting:SetValueChangedCallback(RefreshUI)
     Settings.CreateCheckbox(category, wbSetting,
         "Display the world boss kill list in the This Week section.")
+
+    -- Section: Alts
+    Settings.RegisterInitializer(category,
+        CreateSettingsListSectionHeaderInitializer("Alts", nil))
+
+    local altSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_showAltSummary", "showAltSummary", db,
+        Settings.VarType.Boolean, "Show Alts roll-up",
+        defaults.showAltSummary)
+    altSetting:SetValueChangedCallback(RefreshUI)
+    Settings.CreateCheckbox(category, altSetting,
+        "Aggregate weekly progress across every character you've logged into "
+        .. "with this addon enabled. Hidden when only the active character is tracked.")
 
     Settings.RegisterAddOnCategory(category)
     ns.settingsCategoryID = category:GetID()

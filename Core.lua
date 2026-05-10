@@ -271,6 +271,41 @@ local function BuildTooltip()
         end
     end
 
+    -- ── Section 3: Alts (roll-up summary) ────────────────────────────────────
+    -- Aggregates per-activity completion across every tracked character that
+    -- has logged in since the most recent weekly reset. Stale-data characters
+    -- (no login since reset) are excluded from both the active count and the
+    -- per-activity denominators, so progress reflects only fresh observations.
+    -- Hidden entirely when the user is the only tracked char.
+    local showAlts = not ns.db or ns.db.showAltSummary ~= false
+    local currentReset = ns.char and ns.char.weeklyReset or 0
+    if showAlts and ns.db and ns.db.chars and currentReset > 0 then
+        local trackedCount, activeCount, wbDoneCount = 0, 0, 0
+        for _, c in pairs(ns.db.chars) do
+            trackedCount = trackedCount + 1
+            if (c.lastLogin or 0) >= currentReset then
+                activeCount = activeCount + 1
+                if c.worldBossesDone and next(c.worldBossesDone) then
+                    wbDoneCount = wbDoneCount + 1
+                end
+            end
+        end
+
+        if trackedCount > 1 then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(
+                "Alts (" .. trackedCount .. " tracked, "
+                .. activeCount .. " active this reset)",
+                CL_r, CL_g, CL_b)
+
+            if not ns.db or ns.db.showWorldBosses ~= false then
+                GameTooltip:AddDoubleLine("World Boss",
+                    wbDoneCount .. "/" .. activeCount .. " done",
+                    CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+            end
+        end
+    end
+
     -- ── Interaction hints ─────────────────────────────────────────────────────
     -- Keyword in orange, description in white (matches Broker: Coords).
     GameTooltip:AddLine(" ")
