@@ -251,6 +251,12 @@ local function BuildTooltip()
         end
     end
 
+    -- ── Interaction hints ─────────────────────────────────────────────────────
+    -- Keyword in orange, description in white (matches Broker: Coords).
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("Shift-RightClick", "open settings",
+                              CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
+
     -- ── Footer ────────────────────────────────────────────────────────────────
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("", "Broker: MidnightEvents  v" .. addonVersion,
