@@ -21,31 +21,6 @@ local CL_r, CL_g, CL_b = 0.40, 0.80, 0.80   -- teal   (label / section)
 local CV_r, CV_g, CV_b = 1.00, 1.00, 1.00   -- white  (value)
 local CH_r, CH_g, CH_b = 1.00, 0.60, 0.10   -- orange (urgent / now)
 
--- ── Midnight zone uiMapIDs ────────────────────────────────────────────────────
--- Verified in-game via C_Map.GetMapChildrenInfo on the Midnight continent.
--- Eversong Woods (2395), Voidstorm (2405), Harandar (2413), Zul'Aman (2437).
--- The player's current map is always also scanned, so events visible from
--- adjacent maps (e.g. Silvermoon City Prey POIs) still show up.
-local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437 }
-
--- ── fixed-cadence schedule fallback ───────────────────────────────────────────
--- Some POI events (Stormarion Assault, presumably Slayer's Rise) fire on a
--- fixed wall-clock cadence and don't push per-POI countdowns through the
--- normal API. For each known event name, we predict the next firing as
--- `cadence - (time() % cadence)`, assuming alignment to the :00/:30 marks.
--- If empirical observation shows a different phase, anchor adjustment goes
--- here.
-local FIXED_CADENCE = {
-    ["Stormarion Assault"] = 1800,  -- every 30 min in Voidstorm
-}
-
-local function ScheduleFallbackSecs(name)
-    local cadence = name and FIXED_CADENCE[name]
-    if not cadence then return nil end
-    local now = time()
-    return cadence - (now % cadence)
-end
-
 -- Trim everything after the first ": " — broker bars are narrow, the event
 -- type is what matters there. The full name still appears in the tooltip.
 local function ShortName(name)
@@ -97,7 +72,7 @@ local function ScanMap(mapID, out, seenPOIs)
                     secs = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
                 end
                 if not secs then
-                    secs    = ScheduleFallbackSecs(info.name)
+                    secs    = ns.ScheduleFallbackSecs(info.name)
                     pending = secs ~= nil
                 end
                 local entry = {
@@ -119,7 +94,7 @@ end
 local function RefreshActiveEvents()
     wipe(activeEvents)
     local seen = {}
-    for _, mapID in ipairs(MIDNIGHT_ZONES) do
+    for _, mapID in ipairs(ns.zones) do
         ScanMap(mapID, activeEvents, seen)
     end
     -- Defensive: also scan whatever zone the player is currently in.
