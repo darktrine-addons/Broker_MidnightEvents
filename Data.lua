@@ -33,6 +33,12 @@ function ns.ScheduleFallbackSecs(name)
     return cadence - (time() % cadence)
 end
 
+-- After a predicted firing has passed, the entry stays in 'now!' state for
+-- this many seconds before rolling forward to the next cadence mark. Long
+-- enough to cover most realistic event durations; short enough that a
+-- mispredicted firing self-corrects within reason.
+ns.scheduleGracePeriod = 600  -- 10 min
+
 -- ── Event toggle aliases ──────────────────────────────────────────────────────
 -- Maps an observed event name (full or short) to a stable toggle key, so
 -- multiple POI variants collapse onto one setting (every flavor of Void

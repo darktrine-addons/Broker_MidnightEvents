@@ -58,6 +58,36 @@ local function CurrentRemaining(ev)
     return ev.expiresAt - GetTime()
 end
 
+-- For each pending event whose predicted firing has passed, try to verify
+-- against the live API: if GetAreaPOISecondsLeft now returns a real countdown
+-- (server-pushed during a firing window), promote the entry to a normal
+-- active event. Otherwise, after the grace period, roll the prediction
+-- forward to the next cadence mark so we don't sit on 'now!' indefinitely.
+local function RefreshPendingPredictions()
+    local now   = GetTime()
+    local grace = ns.scheduleGracePeriod or 600
+    for _, ev in ipairs(activeEvents) do
+        if ev.pending and ev.expiresAt and now > ev.expiresAt then
+            local realSecs = ev.poiID and C_AreaPoiInfo.GetAreaPOISecondsLeft
+                                          and C_AreaPoiInfo.GetAreaPOISecondsLeft(ev.poiID)
+            if realSecs and realSecs > 0 then
+                -- Server confirmed the event is firing right now.
+                ev.pending   = false
+                ev.secs      = realSecs
+                ev.expiresAt = now + realSecs
+            elseif (now - ev.expiresAt) > grace then
+                -- No server confirmation in the grace window; assume the
+                -- event has ended and roll forward.
+                local newSecs = ns.ScheduleFallbackSecs(ev.name)
+                if newSecs then
+                    ev.secs      = newSecs
+                    ev.expiresAt = now + newSecs
+                end
+            end
+        end
+    end
+end
+
 -- Visibility filter applied uniformly across broker text and tooltip rendering.
 -- Honors per-event toggles and the "hide distant events" master switch.
 local function IsVisible(ev)
@@ -333,6 +363,7 @@ f:SetScript("OnUpdate", function(self, dt)
     tickerElapsed = tickerElapsed + dt
     if tickerElapsed >= 1.0 then
         tickerElapsed = 0
+        RefreshPendingPredictions()
         UpdateBrokerText()
         if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
             BuildTooltip()
