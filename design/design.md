@@ -4,18 +4,45 @@ This document captures the design and implementation plan for `Broker_MidnightEv
 
 ## Goal
 
-A single LDB broker button. The **broker text** shows the most urgent upcoming timed event ("Stormarion in 23m" / "Abundance now!"). The **tooltip** has three collapsible top-level sections — live event countdowns, this week's checklist (with collapsible sub-groups: World, Dungeons, PvP, Activities, Housing, Profession, Currencies), and an alt roll-up. For altoholics, **Shift-Right-Click** detaches a scrollable, sortable detail panel showing all tracked alts in a tabular grid. No always-on standalone window — the addon lives in the broker bar by default.
+A single LDB broker button focused on **live world event timers and the weeklies tied to them**. The **broker text** shows the most urgent upcoming timed event ("Stormarion in 23m" / "Abundance now!"). The **tooltip** has three collapsible top-level sections: live event countdowns, this week's event-tied checklist, and an alt roll-up. For altoholics, **Shift-Right-Click** detaches a scrollable, sortable detail panel showing all tracked alts in a tabular grid. No always-on standalone window — the addon lives in the broker bar.
+
+## Scope and Differentiation
+
+**Midnight Routine** (~1.6M downloads, very actively maintained) is the dominant comprehensive weekly tracker. We do not compete with it. Our differentiation is form factor (LDB tooltip in a broker bar) and scope (events first, with only the weeklies that are directly tied to events we already track via Tier 1 timers). Everything else — Voidforge, Patron Orders, M+ best, T11 Delves, Housing, Ritual Sites, full Vault breakdown — is intentionally out of scope and explicitly handed to Midnight Routine via the README.
+
+**In scope:**
+- Tier 1 — live POI event timers (Abundance, Stormarion Assault, Slayer's Rise, Bountiful Delve daily, Void Assault active zone)
+- Tier 2 — weekly quests **directly tied to those events**:
+  - Prey Hunts (event-flavoured, 12 contracts across 3 tiers)
+  - World Bosses (per-week loot lockout)
+  - Saltheril's Soiree ("Fortify the Runestones")
+  - Stormarion Assault weekly ("Stand Your Ground")
+  - Legends of the Haranir (weekly scenario)
+  - Midnight: Void Assaults (Lady Liadrin umbrella)
+  - Bountiful Delve weekly (paired with the daily timer)
+  - A Call to Battle (PvP weekly — small footprint, BG win counter)
+- Tier 3 — only the currencies that come from Tier 1 events (Shards of Dundun, Field Accolades, Latent Arcana)
+
+**Out of scope (cede to Midnight Routine):**
+- Voidforge questline
+- Silvermoon Weekly Dungeon
+- T11 Delve weekly
+- Mythic+ weekly best
+- Great Vault detail rows (M+/Raid/World breakdown)
+- Patron Orders / Profession Knowledge
+- Vaeli Housing Weekly
+- Ritual Sites
+- Decor Duels
 
 ## Non-Goals
 
-- Standalone tracker window (Midnight Routine occupies that niche with ~1.6M downloads; competing there is a losing proposition)
-- Replacing WeakAuras for arbitrary in-combat state tracking
-- Holiday/seasonal event tracking (well-served by existing addons)
-- Cooperative read of Midnight Routine SavedVariables (research showed this is fragile, with no versioned contract; own tracking is the foundation and MR cooperation does not buy enough to justify the maintenance cost)
+- Standalone tracker window — Midnight Routine occupies that niche.
+- Replacing WeakAuras for arbitrary in-combat state tracking.
+- Holiday/seasonal events (well-served elsewhere).
+- Cooperative read of Midnight Routine SavedVariables — fragile, no versioned contract; own tracking is the foundation.
+- Comprehensive activity coverage. We deliberately stop at events and event-tied weeklies.
 
 ## Event Catalogue → Implementation Tiers
-
-Events split cleanly into three implementation tiers by data source and cadence.
 
 ### Tier 1 — Live POI Timers (clock-driven, `C_AreaPoiInfo`)
 
@@ -60,9 +87,9 @@ end
 
 **Schedule fallback** — for fixed-cadence events like Stormarion Assault and Slayer's Rise, when `secs` returns nil (event not currently active), derive the next firing time from the 30-minute clock: `math.ceil(time() / 1800) * 1800 - time()`. Flag these as "schedule-predictable" events.
 
-### Tier 2 — Weekly Checklist (quest-completion-driven)
+### Tier 2 — Event-Tied Weekly Checklist (quest-completion-driven)
 
-Binary done/not-done checks with no live countdown. Refresh on login and on `QUEST_TURNED_IN`. Sub-grouped in the tooltip and Settings panel (see "Tooltip Section Hierarchy" below).
+Binary done/not-done checks with no live countdown. Refresh on login and on `QUEST_TURNED_IN`. Every row here is justified by a direct connection to a Tier 1 event we already display.
 
 #### Group: World
 
@@ -73,17 +100,8 @@ Binary done/not-done checks with no live countdown. Refresh on login and on `QUE
 | **Saltheril's Soiree** ("Fortify the Runestones") | binary `✓ / ✗` | `IsQuestFlaggedCompleted` | Eversong runestone weekly. Quest ID: TBD. |
 | **Stormarion Assault weekly** ("Stand Your Ground") | `0/2` or `0/1` (TBD) | `IsQuestFlaggedCompleted` | Voidstorm. Required-runs-per-week TBD. |
 | **Legends of the Haranir** (warband) | binary | `IsQuestFlaggedCompleted` | Solo scenario. |
-| **Midnight: Void Assaults** (Lady Liadrin weekly) | binary or objective progress | `IsQuestFlaggedCompleted` *or* `C_QuestLog.GetQuestObjectives` | Quest giver: Lady Liadrin. Rewards a Spark (likely feeds Voidforge). Single weekly umbrella; Strikes/Incursions presumably contribute to its objectives — confirm objective format at implementation. Quest ID: TBD. |
-
-#### Group: Dungeons & Voidforge
-
-| Activity | Display | API | Notes |
-|---|---|---|---|
-| **Voidforge questline** (12.0.5) — #1 priority | binary or progress | `IsQuestFlaggedCompleted` | 2 bonus roll tokens + Ascendant Voidcores for weapon/trinket upgrades. Highest priority row visually. |
-| **Silvermoon Weekly Dungeon** ⚠ TBD | binary | `IsQuestFlaggedCompleted` | Quest giver in Silvermoon City; rotates weekly (random dungeon, any difficulty). **Quest giver and quest ID need Wowhead lookup.** |
-| **Bountiful Delve weekly** (1st of the week) | binary | `IsQuestFlaggedCompleted` | First Bountiful Delve quest. |
-| **T11 Delve weekly** | binary | `IsQuestFlaggedCompleted` | Tier-gated Delve weekly distinct from Bountiful (per icy-veins May 2026). |
-| **Mythic+ weekly best** | `+8` (vault-credit run, capped at +10 this season) | `C_MythicPlus.GetWeeklyBestForMap(mapID)` + `RequestMapInfo` | Show best +keystone run this week. |
+| **Midnight: Void Assaults** (Lady Liadrin weekly) | binary or objective progress | `IsQuestFlaggedCompleted` *or* `C_QuestLog.GetQuestObjectives` | Quest giver: Lady Liadrin. Single weekly umbrella; Strikes/Incursions presumably contribute to its objectives — confirm objective format at implementation. Quest ID: TBD. |
+| **Bountiful Delve weekly** (1st of the week) | binary | `IsQuestFlaggedCompleted` | Paired with the Tier 1 daily Bountiful marker. |
 
 #### Group: PvP
 
@@ -91,26 +109,7 @@ Binary done/not-done checks with no live countdown. Refresh on login and on `QUE
 |---|---|---|---|
 | **A Call to Battle** | `0/4` BG wins | `C_QuestLog.GetQuestObjectives` (or `IsQuestFlaggedCompleted` for binary) | Quest giver: Archmage Aethas Sunreaver. Objective: Win 4 Battleground matches. Rewards: 5 Mark of Honor + 175 Conquest. Quest ID: TBD. |
 
-#### Group: Activities
-
-| Activity | Display | API | Notes |
-|---|---|---|---|
-| **Great Vault** | `5/8` (slots filled) | `C_WeeklyRewards.GetActivities()` → `progress / threshold` per slot | Shows total filled slots; tooltip detail breaks out M+/Raid/World rows. |
-
-#### Group: Housing (12.0.5)
-
-| Activity | Display | API | Notes |
-|---|---|---|---|
-| **Vaeli Housing Weekly** | binary | `IsQuestFlaggedCompleted` | Quest giver Vaeli, outside Silvermoon bank. Quest ID: TBD. |
-| **Ritual Sites** (12.0.5) | binary or progress (TBD) | `IsQuestFlaggedCompleted` *or* objective scan | Mechanic and quest gate TBD. |
-
-#### Group: Profession
-
-| Activity | Display | API | Notes |
-|---|---|---|---|
-| **Patron Orders / Profession KP** | `✓` per profession | `IsQuestFlaggedCompleted` × profession | One quest ID per crafting profession (per character). |
-
-**Out of scope (intentionally not tracked):** Decor Duels (no gear reward, low priority per icy-veins).
+**Out of scope (cede to Midnight Routine):** Voidforge questline, Silvermoon Weekly Dungeon, T11 Delve weekly, M+ weekly best, Vaeli Housing Weekly, Ritual Sites, Patron Orders / Profession Knowledge, Decor Duels, full Great Vault breakdown.
 
 **Event-driven pattern (applies to all rows above):**
 
@@ -124,16 +123,22 @@ f:RegisterEvent("QUEST_LOG_UPDATE")        -- server-push catch-all (debounced 0
 
 **Weekly reset detection** — compare `GetQuestResetTime()` (daily) against a stored `lastResetEpoch`. When the stored epoch is older than the most recent Tuesday 08:00 UTC, wipe the weekly completion cache.
 
-### Tier 3 — Weekly Currency Caps (display-only)
+### Tier 3 — Event-Tied Currencies (display-only)
 
-Optional section; shows weekly-capped currency progress.
+Only currencies that come from Tier 1 events:
+
+| Currency | Source event | Notes |
+|---|---|---|
+| **Shards of Dundun** | Abundance | Cap 8/week |
+| **Field Accolades** | Void Assaults (Strikes + Incursions) | Cap TBD; tooltip cross-check for the Liadrin weekly |
+| **Latent Arcana** | Saltheril's Soiree daily/runestone activities | Daily trickle that funds the weekly Soiree |
 
 ```lua
 C_CurrencyInfo.GetCurrencyInfo(currencyID)
 -- fields: quantityEarnedThisWeek, maxQuantityPerWeek, quantity
 ```
 
-Currency IDs to be resolved at implementation: Valorstone (3008 confirmed), knowledge points, crests. Low cost, high tooltip value.
+Currency IDs to be resolved at implementation. Knowledge points, crests, and Valorstone are **not** tracked (cede to Midnight Routine).
 
 ## Data Model (SavedVariables)
 
@@ -142,20 +147,13 @@ Broker_MidnightEventsDB = {
     -- top-level section toggles
     enabledSections  = { timers = true, weekly = true, alts = true },
     -- weekly sub-group toggles
-    enabledGroups    = { world = true, dungeons = true, pvp = true,
-                         activities = true, housing = true,
-                         profession = true, currencies = true },
+    enabledGroups    = { world = true, pvp = true, currencies = true },
     -- per-row toggles (keys match activity slugs)
     enabledRows      = { prey = true, bosses = true, soiree = true,
                          stormarion = true, haranir = true,
                          voidAssaults = true,         -- Lady Liadrin weekly
-                         voidforge = true,
-                         silvermoonDungeon = true, bountifulDelve = true,
-                         t11Delve = true, mythicPlus = true,
-                         callToBattle = true, vault = true,
-                         vaeliHousing = true, ritualSites = true,
-                         -- patronOrders.<profID> per crafting profession
-                       },
+                         bountifulDelve = true,
+                         callToBattle = true },
     -- per-event toggles (Tier 1 timers)
     enabledEvents    = { abundance = true, stormarionAssault = true,
                          slayersRise = true, bountifulDelveDaily = true,
@@ -164,11 +162,7 @@ Broker_MidnightEventsDB = {
     sectionState     = { timers = "expanded", weekly = "expanded",
                          alts = "collapsed",
                          ["weekly.world"] = "expanded",
-                         ["weekly.dungeons"] = "expanded",
                          ["weekly.pvp"] = "collapsed",
-                         ["weekly.activities"] = "expanded",
-                         ["weekly.housing"] = "collapsed",
-                         ["weekly.profession"] = "collapsed",
                          ["weekly.currencies"] = "collapsed" },
     -- per-character progress snapshot (keyed by "realm/charname")
     chars = {
@@ -178,10 +172,7 @@ Broker_MidnightEventsDB = {
             questsDone      = {},         -- set of questIDs completed this week
             preyProgress    = { N = 0, H = 0, NM = 0 },  -- Prey hunt counts per tier
             worldBossesDone = {},         -- set of worldBossIDs with active lockout
-            vaultProgress   = {},         -- from C_WeeklyRewards, snapshot on login
-            mythicPlusBest  = 0,          -- best +keystone level this week
-            currencies      = {},         -- weekly caps snapshot
-            professions     = {},         -- which profession patron quests done
+            currencies      = {},         -- weekly caps snapshot (event-tied only)
         },
     },
     -- characters the user has explicitly hidden from alt panel
@@ -221,20 +212,14 @@ Broker text refresh:
 
 ## Tooltip Section Hierarchy
 
-The tooltip has three top-level sections. The middle section (**This Week**) splits into named sub-groups so it stays readable as the activity count grows. Every section and every sub-group is independently collapsible (state persisted in `db.sectionState`); shift-click a header to toggle.
-
-The Settings panel mirrors this hierarchy exactly: each section, sub-group, and individual row has a corresponding toggle. Disabling a sub-group hides the whole block in the tooltip; disabling a single row hides just that row.
+The tooltip has three top-level sections. The middle section (**This Week**) splits into named sub-groups so it stays readable. Every section and every sub-group is independently collapsible (state persisted in `db.sectionState`); shift-click a header to toggle. The Settings panel mirrors this hierarchy exactly.
 
 ```
 1. Timed Events                          (Tier 1)
 2. This Week  (CharName)                 (Tier 2 + Tier 3)
    ├─ World
-   ├─ Dungeons & Voidforge
    ├─ PvP
-   ├─ Activities
-   ├─ Housing
-   ├─ Profession
-   └─ Currencies                         (Tier 3 — weekly-capped currency progress)
+   └─ Currencies                         (Tier 3 — event-tied currency caps)
 3. Alts                                  (roll-up summary; detail view detached)
 ```
 
@@ -255,28 +240,19 @@ The Settings panel mirrors this hierarchy exactly: each section, sub-group, and 
 │      Stand Your Ground                     0/2  │
 │      Legends of the Haranir          (warband)  │
 │      Midnight: Void Assaults  (Liadrin) 5/8     │
-│  ▼ Dungeons & Voidforge                         │
-│      Voidforge questline                   ✓    │
-│      Silvermoon Weekly Dungeon ⚠ TBD       ✗    │
 │      Bountiful Delve weekly                ✓    │
-│      T11 Delve weekly                      ✗    │
-│      M+ weekly best                        +8   │
-│  ▶ PvP                                          │
-│  ▶ Activities                  Vault 5/8        │
-│  ▶ Housing                                      │
-│  ▶ Profession                  3/4 done         │
-│  ▶ Currencies                                   │
+│  ▶ PvP                A Call to Battle  3/4 BG  │
+│  ▶ Currencies         Shards 5/8 · Accol 6/?    │
 ├─ Alts (12 tracked, 8 active this reset) ────────┤
 │  Prey hunts:    5/12 done                       │
 │  World Boss:    7/12 done                       │
 │  Soiree:        9/12 done                       │
-│  Vault filled:  3/12 done                       │
-│  Voidforge:     2/12 done                       │
+│  Void Assaults: 4/12 done                       │
 │  ▸ Shift-Right-click for detail panel           │
 └─────────────────────────────────────────────────┘
 ```
 
-Sub-group headers show `▼` when expanded, `▶` when collapsed. Collapsed groups can show a one-line summary on the header line (e.g. "Activities ▶ Vault 5/8") so the user keeps the most important data visible without expanding.
+Sub-group headers show `▼` when expanded, `▶` when collapsed. Collapsed groups can show a one-line summary on the header line (e.g. "PvP ▶ A Call to Battle 3/4") so the user keeps the most important data visible without expanding.
 
 ## Alts — Two-Mode Display
 
@@ -289,7 +265,7 @@ Alts (12 tracked, 8 active this reset)
    Prey hunts:    5/12 done
    World Boss:    7/12 done
    Soiree:        9/12 done
-   Vault filled:  3/12 done
+   Void Assaults: 4/12 done
 ```
 
 Aggregates **enabled activity rows** across all tracked characters. Constant size regardless of alt count. "Active this reset" = logged in since the most recent weekly reset; characters with stale data are excluded from the denominator (so "5/12" reflects only fresh data).
@@ -302,12 +278,12 @@ Triggered by **Shift-Right-Click** on the broker button (or a dedicated keybind)
 ┌─ Broker_MidnightEvents · Alts ────────────────────────[X]┐
 │ Filter: [All ▼]  Sort: [Last login ▼]   12 chars         │
 ├──────────────────────────────────────────────────────────┤
-│ Char       Prey   Boss  Soir  Vault  Voidforge  …  scroll│
-│ Thrandis   12/12   ✓     ✓    8/8    ✓                ↑  │
-│ Miravel     8/12   ✗     ✗    5/8    ✗                █  │
-│ Tessadra    —      —     —    —      —                █  │
-│ Hawken     12/12   ✓     ✓    7/8    ✓                ▒  │
-│ … (scrollable)                                        ↓  │
+│ Char       Prey   Boss  Soir  Stmrn  Haran  VoidA   BGs  │
+│ Thrandis   12/12   ✓     ✓     2/2    ✓      8/8    4/4  │
+│ Miravel     8/12   ✗     ✗     0/2    ✓      5/8    1/4  │
+│ Tessadra    —      —     —     —      —      —      —    │
+│ Hawken     12/12   ✓     ✓     1/2    ✗      7/8    4/4  │
+│ … (scrollable)                                           │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -320,30 +296,28 @@ UX rules:
 - **Filter dropdown**: All / Tracked only / Active this reset / By realm / By class.
 - **Sort dropdown**: Last login (default) / Name / Most progress / Least progress.
 - **Column visibility** mirrors the enabled activity toggles. Disabling "Soiree" in Settings removes both the tooltip row *and* the alts column.
-- **Resizable**: user can drag the bottom-right corner to widen for more columns or taller for more rows. Geometry persisted.
+- **Resizable**: user can drag the bottom-right corner. Geometry persisted.
 - **No hard row cap** — the scrollable list handles 30+ alts gracefully.
+
+The narrower tier-2 scope means fewer columns (~8 instead of ~15), so the panel default width can shrink and most users will never need to scroll horizontally.
 
 ### Frame implementation notes
 
-Use `ScrollFrame` + `FauxScrollFrame` pattern (Blizzard standard) to render only visible rows. For ~30 alts × ~15 columns this is well under any performance concern.
+Use `ScrollFrame` + `FauxScrollFrame` pattern (Blizzard standard) to render only visible rows.
 
 ## Settings Panel
 
-Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Three top-level categories, each with sub-headers matching the tooltip section hierarchy.
+Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Three top-level categories.
 
 - **Timed Events**
    - per-event toggle: Abundance, Stormarion Assault, Slayer's Rise, Bountiful Delve, Void Assault zone indicator
    - "Show inactive events" master toggle (greys out events not currently firing)
 
 - **Weekly Checklist**
-   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Midnight: Void Assaults)
+   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Midnight: Void Assaults, Bountiful Delve)
       - Prey: optional toggles per tier (Normal/Hard/Nightmare)
-   - **Dungeons & Voidforge** sub-group toggle + per-row toggles (Voidforge, Silvermoon Weekly, Bountiful Delve, T11 Delve, M+ best)
    - **PvP** sub-group toggle + per-row toggles (A Call to Battle)
-   - **Activities** sub-group toggle + per-row toggles (Great Vault)
-   - **Housing** sub-group toggle + per-row toggles (Vaeli Weekly, Ritual Sites)
-   - **Profession** sub-group toggle + per-profession toggles (Patron Orders × N professions)
-   - **Currencies** sub-group toggle + per-currency toggles
+   - **Currencies** sub-group toggle + per-currency toggles (Shards of Dundun, Field Accolades, Latent Arcana)
 
 - **Display**
    - Broker text style: countdown only / event name + countdown / urgent-only
@@ -364,45 +338,45 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 | Widget timer enumeration | `C_UIWidgetManager.GetAllWidgetsBySetID(setID)` | Use `info.tooltipWidgetSet` from POI for setID |
 | Single widget update | `UPDATE_UI_WIDGET` | Payload: `{widgetSetID, widgetID, widgetType}` |
 | Weekly quest completion | `C_QuestLog.IsQuestFlaggedCompleted(questID)` | Stale briefly post-instance; re-check on PEW |
+| Quest objective progress | `C_QuestLog.GetQuestObjectives(questID)` | For multi-objective weeklies (BG wins, Stormarion runs) |
 | Bulk completion history | `C_QuestLog.GetAllCompletedQuestIDs()` | Returns sorted array; use for login bulk init |
 | Daily reset time | `GetQuestResetTime()` | Daily only; weekly via SavedInstance reset field |
-| Great Vault progress | `C_WeeklyRewards.GetActivities([type])` | Returns `progress`, `threshold`, `rewards[]` per slot |
 | World boss lockout | `GetSavedWorldBossInfo(index)` | Iterate 1..GetNumSavedWorldBosses |
-| Raid lockout | `GetSavedInstanceInfo(index)` | `reset` field is seconds until expiry |
 | Weekly currencies | `C_CurrencyInfo.GetCurrencyInfo(currencyID)` | `quantityEarnedThisWeek` is 0 for non-capped currencies |
 
 ## Recommended Build Sequence
 
-1. **Scaffold + Tier 1 POI timers** — broker text + live countdown tooltip section. Validates the `C_AreaPoiInfo` event loop and gives something usable immediately.
-2. **Tier 2 weekly checklist (Group: World)** — covers the bulk of activity tracking. Requires quest ID harvesting from Wowhead.
-3. **Tier 2 remaining groups** — Dungeons & Voidforge, PvP, Activities, Housing, Profession (in order of user value).
-4. **Tier 3 currency caps** — additive; cheap to add once Tier 2 is wired.
-5. **Alt tracking — Mode 1 (roll-up summary)** in tooltip. Cheap once Tier 2 is in.
-6. **Alt tracking — Mode 2 (detail panel frame)** with scroll, sort, filter, hide. Larger UI work; ship after rest is stable.
-7. **Settings panel** — same pattern as Broker_PlayerCoords; mirrors the tooltip hierarchy exactly.
-8. **Minimap button + LibDBIcon registration** — already in scaffold; no extra work.
+1. **Tier 1 POI timers** — broker text + live countdown tooltip section. Validates the `C_AreaPoiInfo` event loop and gives something usable immediately.
+2. **Tier 2 weekly checklist** — single Group: World, plus the small PvP row. Quest IDs harvested from Wowhead in one pass.
+3. **Tier 3 currency caps** — three currencies, additive once Tier 2 is wired.
+4. **Alt tracking — Mode 1 (roll-up summary)** in tooltip.
+5. **Alt tracking — Mode 2 (detail panel frame)** with scroll, sort, filter, hide.
+6. **Settings panel** — same pattern as Broker_PlayerCoords; mirrors the tooltip hierarchy exactly.
+7. **Minimap button + LibDBIcon registration** — already in scaffold.
 
 ## Open Questions for Resolution
 
-Items marked `⚠ TBD` in the tier tables above need quest IDs and quest givers identified before they can be wired in. Each row resolves to a single `IsQuestFlaggedCompleted` call once the questID is known.
-
-| # | Item | What's needed |
+| # | Item | Status |
 |---|---|---|
-| 1 | **Silvermoon Weekly Dungeon Quest** | Quest giver location in Silvermoon City; quest ID; whether it's a single static quest with a rotating dungeon target or one of N quests per week. **User to look up on Wowhead.** |
-| 2 | ~~Call for Battle (PvP weekly)~~ | **Resolved (in-game inspection, May 2026):** Quest is **"A Call to Battle"** from **Archmage Aethas Sunreaver**. Objective: Win 4 Battleground matches (regular BGs, not Training). Rewards: 5 Mark of Honor + 175 Conquest. Quest ID still TBD. |
-| 3 | **Stormarion Assault weekly quest** | Confirm whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection. |
-| 4 | ~~Lady Liadrin Weekly World Event~~ | **Resolved (user, May 2026):** Lady Liadrin's weekly is "Midnight: Void Assaults" — the canonical Void Assault umbrella. Consolidated with Strikes/Incursion into one row. Quest ID still TBD. |
-| 5 | **Voidforge questline weekly gate** | Which specific quest in the chain is the weekly cap? (Whole chain vs single quest per week.) |
-| 6 | **Vaeli Housing Weekly** | Quest ID. |
-| 7 | **Ritual Sites** | Mechanic detail; whether progress is gated by a quest, an objective bar, or completion vignettes. |
-| 8 | **Midnight: Void Assaults objective format** | Whether the weekly is binary completion or has an objective bar (e.g. "complete N Strikes / 1 Incursion"). Use `C_QuestLog.GetQuestObjectives(questID)` once quest ID is known. |
-| 9 | **Patron Order quest IDs per profession** | One quest ID per crafting profession (8 professions). |
+| 1 | ~~Silvermoon Weekly Dungeon Quest~~ | **Out of scope (Option Y, May 2026):** ceded to Midnight Routine. |
+| 2 | ~~A Call to Battle quest giver/objective~~ | **Resolved (in-game inspection):** Archmage Aethas Sunreaver, Win 4 BG matches, 5 Mark of Honor + 175 Conquest. Quest ID still TBD. |
+| 3 | **Stormarion Assault weekly quest count** | Confirm whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection. |
+| 4 | ~~Lady Liadrin Weekly~~ | **Resolved (user, May 2026):** This *is* "Midnight: Void Assaults" — single umbrella row. Quest ID still TBD. |
+| 5 | ~~Voidforge questline weekly gate~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
+| 6 | ~~Vaeli Housing Weekly~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
+| 7 | ~~Ritual Sites~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
+| 8 | **Midnight: Void Assaults objective format** | Whether the weekly is binary completion or has an objective bar. Use `C_QuestLog.GetQuestObjectives(questID)` once quest ID is known. |
+| 9 | ~~Patron Order quest IDs per profession~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
 | 10 | **Prey Hunt quest IDs** | 12 IDs total (4 zones × 3 tiers); plus the Nightmare-3-hunts weekly quest ID. |
+| 11 | **Field Accolades currency ID** | For Tier 3 cap display. |
+| 12 | **Latent Arcana currency ID** | For Tier 3 cap display. |
+| 13 | **Shards of Dundun currency ID** | For Tier 3 cap display. |
+| 14 | **Soiree, Stormarion, Liadrin, Bountiful Delve weekly quest IDs** | 4 quest IDs for `IsQuestFlaggedCompleted`. |
 
 ## General Risks
 
-- **Quest IDs are patch-fragile.** Each minor patch can change quest IDs. Maintain a single table at the top of `Core.lua` for easy per-patch updates. Consider a `MAJOR_PATCH_REQUIRES_REVIEW` flag check that warns the user in chat once when the build's interface version is below the running game's.
+- **Quest IDs are patch-fragile.** Each minor patch can change quest IDs. Maintain a single table at the top of `Core.lua` for easy per-patch updates. Consider warning the user in chat once when the build's interface version is below the running game's.
 - **POI ID stability across zones.** `GetEventsForMap` is the right approach precisely because POI IDs may shift; we filter by `isCurrentEvent` and read names/icons live.
-- **World boss rotation model uncertain.** Whether all four bosses are simultaneously available per week or rotate. `GetSavedWorldBossInfo` will report the truth at runtime regardless; no preflight assumption needed.
+- **World boss rotation model uncertain.** Whether all four bosses are simultaneously available per week or rotate. `GetSavedWorldBossInfo` reports the truth at runtime regardless.
 - **Bountiful Delve markers.** The daily-rotating "Bountiful" marker is a POI but we need to confirm it appears in `GetEventsForMap` (vs. `GetDelvesForMap`).
 - **Void Assault active-zone detection.** No public timer expected (week-long indicator), so likely inferred from which zone has active Void Strike POIs in `GetEventsForMap`. Validate at implementation.

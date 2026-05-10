@@ -12,10 +12,13 @@ Retail only. Requires Midnight (Interface 120005+) and a broker host such as Arc
 
 ## Planned Features
 
-- **Live event timers** — Abundance (8 h rotation), Stormarion Assault (30 min), Slayer's Rise PvP rotation (30 min), Bountiful Delve daily reset
-- **Weekly checklist** — Prey hunts, world boss lockouts, Saltheril's Soiree, Stormarion weekly quest, Legends of the Haranir, Great Vault progress, Patron Orders per profession
-- **Alt roll-up** — passive snapshot of each character's weekly state on login; no other addon required
-- **Native Settings panel** — toggle each section and individual events
+This addon is intentionally focused on **events and the weeklies tied to them**. For comprehensive weekly tracking (Voidforge, Patron Orders, M+ best, Vault breakdown, housing, etc.), use [Midnight Routine](https://www.curseforge.com/wow/addons/midnight-routine) — they are designed to coexist.
+
+- **Live event timers** — Abundance (8 h rotation), Stormarion Assault (30 min), Slayer's Rise PvP rotation (30 min), Bountiful Delve daily reset, Void Assault active zone (12.0.5)
+- **Event-tied weekly checklist** — Prey hunts (12 contracts across 3 tiers), world boss lockouts, Saltheril's Soiree, Stormarion weekly quest ("Stand Your Ground"), Legends of the Haranir, Midnight: Void Assaults (Lady Liadrin umbrella), Bountiful Delve weekly, A Call to Battle (PvP)
+- **Event-tied currency caps** — Shards of Dundun, Field Accolades, Latent Arcana
+- **Alt roll-up** — passive snapshot of each character's weekly state on login; tooltip shows aggregate progress, Shift-Right-Click opens a scrollable detail panel for altoholics
+- **Native Settings panel** — toggle each section, sub-group, and individual row
 - **Minimap button** — drag-to-reposition icon via LibDBIcon
 
 ## Installation (planned)
