@@ -233,19 +233,21 @@ local function BuildTooltip()
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
 
-        -- World Bosses — list locked names, or "none yet" when zero.
+        -- World Bosses — green 'available' when zero kills this week (usually
+        -- one boss is up per week, so this is "go check the map"); grey list
+        -- of names when one or more have been killed.
         local bossLabel = "World Bosses"
         local bosses    = ns.char and ns.char.worldBossesDone or {}
         local names     = {}
         for _, n in pairs(bosses) do names[#names + 1] = n end
         table.sort(names)
         if #names == 0 then
-            GameTooltip:AddDoubleLine(bossLabel, "none yet",
-                                      CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+            GameTooltip:AddDoubleLine(bossLabel, "available",
+                                      CV_r, CV_g, CV_b, 0.30, 0.85, 0.30)
         else
-            local value = table.concat(names, " \194\183 ") .. "  (" .. #names .. ")"
+            local value = table.concat(names, " \194\183 ")
             GameTooltip:AddDoubleLine(bossLabel, value,
-                                      CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+                                      CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
         end
     end
 
