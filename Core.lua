@@ -28,6 +28,30 @@ local CH_r, CH_g, CH_b = 1.00, 0.60, 0.10   -- orange (urgent / now)
 -- adjacent maps (e.g. Silvermoon City Prey POIs) still show up.
 local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437 }
 
+-- ── fixed-cadence schedule fallback ───────────────────────────────────────────
+-- Some POI events (Stormarion Assault, presumably Slayer's Rise) fire on a
+-- fixed wall-clock cadence and don't push per-POI countdowns through the
+-- normal API. For each known event name, we predict the next firing as
+-- `cadence - (time() % cadence)`, assuming alignment to the :00/:30 marks.
+-- If empirical observation shows a different phase, anchor adjustment goes
+-- here.
+local FIXED_CADENCE = {
+    ["Stormarion Assault"] = 1800,  -- every 30 min in Voidstorm
+}
+
+local function ScheduleFallbackSecs(name)
+    local cadence = name and FIXED_CADENCE[name]
+    if not cadence then return nil end
+    local now = time()
+    return cadence - (now % cadence)
+end
+
+-- Trim everything after the first ": " — broker bars are narrow, the event
+-- type is what matters there. The full name still appears in the tooltip.
+local function ShortName(name)
+    return name and (name:match("^(.-): ") or name) or "Event"
+end
+
 -- ── active events ─────────────────────────────────────────────────────────────
 -- Rebuilt on AREA_POIS_UPDATED. Each entry:
 --   { mapID, poiID, name, atlas, secs, expiresAt }
@@ -69,6 +93,9 @@ local function ScanMap(mapID, out, seenPOIs)
                 local secs
                 if C_AreaPoiInfo.IsAreaPOITimed(poiID) then
                     secs = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
+                end
+                if not secs then
+                    secs = ScheduleFallbackSecs(info.name)
                 end
                 local entry = {
                     mapID = mapID,
@@ -134,10 +161,11 @@ local function UpdateBrokerText()
     end
 
     if soonest then
+        local short = ShortName(soonest.name)
         if soonestRem and soonestRem <= 0 then
-            broker.text = soonest.name .. "  now!"
+            broker.text = short .. "  now!"
         else
-            broker.text = soonest.name .. "  " .. FormatRemaining(soonestRem)
+            broker.text = short .. "  " .. FormatRemaining(soonestRem)
         end
     else
         broker.text = "Midnight Events"
