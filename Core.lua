@@ -22,11 +22,11 @@ local CV_r, CV_g, CV_b = 1.00, 1.00, 1.00   -- white  (value)
 local CH_r, CH_g, CH_b = 1.00, 0.60, 0.10   -- orange (urgent / now)
 
 -- ── Midnight zone uiMapIDs ────────────────────────────────────────────────────
--- Placeholders from the design doc; verify in-game (see README → Verification).
--- Eversong / Zul'Aman / Harandar / Voidstorm.
--- The player's current map is always also scanned, so wrong IDs degrade
--- gracefully to "events visible only from the zone you're standing in."
-local MIDNIGHT_ZONES = { 2601, 2602, 2603, 2604 }
+-- Verified in-game via C_Map.GetMapChildrenInfo on the Midnight continent.
+-- Eversong Woods (2395), Voidstorm (2405), Harandar (2413), Zul'Aman (2437).
+-- The player's current map is always also scanned, so events visible from
+-- adjacent maps (e.g. Silvermoon City Prey POIs) still show up.
+local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437 }
 
 -- ── active events ─────────────────────────────────────────────────────────────
 -- Rebuilt on AREA_POIS_UPDATED. Each entry:
