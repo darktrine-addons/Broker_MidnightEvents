@@ -145,23 +145,39 @@ local function RefreshActiveEvents()
     end)
 end
 
--- ── world boss lockouts ───────────────────────────────────────────────────────
--- GetSavedWorldBossInfo only enumerates LOCKED bosses (i.e. already killed this
--- week). The full per-week roster (and which are spawned in any given week)
--- isn't exposed by the public API, so the tooltip only shows the kills we can
--- prove. UPDATE_INSTANCE_INFO is the canonical "raid lockout state changed"
--- signal; we kick a refresh on PEW and a delayed one on BOSS_KILL.
+-- ── weekly completion tracking ────────────────────────────────────────────────
+-- Midnight weeklies (and world bosses) register via quest credit, not the
+-- legacy raid-lockout system. We poll IsQuestFlaggedCompleted on PEW and on
+-- quest events to keep ns.char.weeklies and ns.char.worldBoss fresh.
 
-local function RefreshWorldBosses()
-    if not ns.char or not GetNumSavedWorldBosses then return end
-    local locked = {}
-    for i = 1, GetNumSavedWorldBosses() do
-        local name, instanceID, reset = GetSavedWorldBossInfo(i)
-        if name and reset and reset > 0 then
-            locked[tostring(instanceID or name)] = name
+local function RefreshWeeklies()
+    if not ns.char or not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
+        return
+    end
+
+    -- Per-row binary weeklies.
+    ns.char.weeklies = ns.char.weeklies or {}
+    for _, w in ipairs(ns.weeklies or {}) do
+        ns.char.weeklies[w.key] = C_QuestLog.IsQuestFlaggedCompleted(w.questID) or false
+    end
+
+    -- World boss: umbrella tells us "any boss killed this week"; the per-boss
+    -- credit table tells us WHICH. Stored as { done, name } where name is nil
+    -- if the umbrella fired but no per-boss credit matched (e.g. a boss whose
+    -- credit ID we haven't catalogued yet).
+    local umbrella = ns.worldBossWeekly
+                     and C_QuestLog.IsQuestFlaggedCompleted(ns.worldBossWeekly)
+                     or false
+    local bossName
+    if umbrella then
+        for _, b in ipairs(ns.worldBosses or {}) do
+            if C_QuestLog.IsQuestFlaggedCompleted(b.questID) then
+                bossName = b.name
+                break
+            end
         end
     end
-    ns.char.worldBossesDone = locked
+    ns.char.worldBoss = { done = umbrella, name = bossName }
 end
 
 -- ── broker text ───────────────────────────────────────────────────────────────
@@ -247,27 +263,39 @@ local function BuildTooltip()
     end
 
     -- ── Section 2: This Week (CharName) ───────────────────────────────────────
+    -- Header is shown if any of the rows below would render. World boss row
+    -- and binary weeklies share the same green/grey done-vs-available logic:
+    -- green ✗ for outstanding, grey ✓ (or boss name) for completed.
     local showWB = not ns.db or ns.db.showWorldBosses ~= false
-    if showWB then
+    local hasWeeklies = ns.weeklies and #ns.weeklies > 0
+    if showWB or hasWeeklies then
         local charName = UnitName("player") or "?"
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("This Week (" .. charName .. ")", CL_r, CL_g, CL_b)
 
-        -- World Bosses — green 'available' when zero kills this week (usually
-        -- one boss is up per week, so this is "go check the map"); grey list
-        -- of names when one or more have been killed.
-        local bossLabel = "World Bosses"
-        local bosses    = ns.char and ns.char.worldBossesDone or {}
-        local names     = {}
-        for _, n in pairs(bosses) do names[#names + 1] = n end
-        table.sort(names)
-        if #names == 0 then
-            GameTooltip:AddDoubleLine(bossLabel, "available",
-                                      CV_r, CV_g, CV_b, 0.30, 0.85, 0.30)
-        else
-            local value = table.concat(names, " \194\183 ")
-            GameTooltip:AddDoubleLine(bossLabel, value,
-                                      CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+        if showWB then
+            local wb = ns.char and ns.char.worldBoss or {}
+            if wb.done then
+                GameTooltip:AddDoubleLine("World Boss",
+                    wb.name or "killed",
+                    CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+            else
+                GameTooltip:AddDoubleLine("World Boss", "available",
+                    CV_r, CV_g, CV_b, 0.30, 0.85, 0.30)
+            end
+        end
+
+        if hasWeeklies then
+            local weeklies = ns.char and ns.char.weeklies or {}
+            for _, w in ipairs(ns.weeklies) do
+                if weeklies[w.key] then
+                    GameTooltip:AddDoubleLine(w.label, "\226\156\147",  -- ✓
+                        CV_r, CV_g, CV_b, 0.6, 0.6, 0.6)
+                else
+                    GameTooltip:AddDoubleLine(w.label, "\226\156\151",  -- ✗
+                        CV_r, CV_g, CV_b, CH_r, CH_g, CH_b)
+                end
+            end
         end
     end
 
@@ -280,13 +308,22 @@ local function BuildTooltip()
     local showAlts = not ns.db or ns.db.showAltSummary ~= false
     local currentReset = ns.char and ns.char.weeklyReset or 0
     if showAlts and ns.db and ns.db.chars and currentReset > 0 then
-        local trackedCount, activeCount, wbDoneCount = 0, 0, 0
+        local trackedCount, activeCount = 0, 0
+        local wbDoneCount = 0
+        local weeklyDoneCount = {}            -- weekly key → completion count
         for _, c in pairs(ns.db.chars) do
             trackedCount = trackedCount + 1
             if (c.lastLogin or 0) >= currentReset then
                 activeCount = activeCount + 1
-                if c.worldBossesDone and next(c.worldBossesDone) then
+                if c.worldBoss and c.worldBoss.done then
                     wbDoneCount = wbDoneCount + 1
+                end
+                if c.weeklies then
+                    for k, done in pairs(c.weeklies) do
+                        if done then
+                            weeklyDoneCount[k] = (weeklyDoneCount[k] or 0) + 1
+                        end
+                    end
                 end
             end
         end
@@ -301,6 +338,13 @@ local function BuildTooltip()
             if not ns.db or ns.db.showWorldBosses ~= false then
                 GameTooltip:AddDoubleLine("World Boss",
                     wbDoneCount .. "/" .. activeCount .. " done",
+                    CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
+            end
+
+            for _, w in ipairs(ns.weeklies or {}) do
+                local done = weeklyDoneCount[w.key] or 0
+                GameTooltip:AddDoubleLine(w.label,
+                    done .. "/" .. activeCount .. " done",
                     CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
             end
         end
@@ -356,23 +400,18 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("AREA_POIS_UPDATED")
-f:RegisterEvent("UPDATE_INSTANCE_INFO")
-f:RegisterEvent("BOSS_KILL")
+f:RegisterEvent("QUEST_TURNED_IN")
+f:RegisterEvent("QUEST_REMOVED")
 
 f:SetScript("OnEvent", function(self, event)
-    if event == "BOSS_KILL" then
-        -- Server takes a moment to register the lockout; ask for fresh raid
-        -- info shortly, which will fire UPDATE_INSTANCE_INFO.
-        if RequestRaidInfo then C_Timer.After(2, RequestRaidInfo) end
-        return
-    end
-
     if event == "PLAYER_ENTERING_WORLD" or event == "AREA_POIS_UPDATED" then
         RefreshActiveEvents()
         UpdateBrokerText()
     end
-    if event == "PLAYER_ENTERING_WORLD" or event == "UPDATE_INSTANCE_INFO" then
-        RefreshWorldBosses()
+    if event == "PLAYER_ENTERING_WORLD"
+       or event == "QUEST_TURNED_IN"
+       or event == "QUEST_REMOVED" then
+        RefreshWeeklies()
     end
     if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
         BuildTooltip()

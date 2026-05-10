@@ -68,3 +68,30 @@ ns.eventToggles = {
     { key = "voidAssault",        label = "Void Assaults"      },
     { key = "bountifulDelve",     label = "Bountiful Delve"    },
 }
+
+-- ── Tier 2: weekly checklist quest IDs ────────────────────────────────────────
+-- Each entry maps to one row in the tooltip's "This Week" section. The order
+-- here is the rendering order. `questID` is checked via IsQuestFlaggedCompleted
+-- on PEW + QUEST_TURNED_IN + QUEST_REMOVED.
+ns.weeklies = {
+    { key = "soiree",            questID = 93889, label = "Saltheril's Soiree" },
+    { key = "stormarionWeekly",  questID = 93892, label = "Stormarion Assault" },
+    { key = "bountifulWeekly",   questID = 93909, label = "Bountiful Delve"    },
+    { key = "voidAssaultWeekly", questID = 95842, label = "Void Assaults"      },
+    { key = "callToBattle",      questID = 94457, label = "A Call to Battle"   },
+    { key = "haranir",           questID = 89268, label = "Lost Legends"       },
+}
+
+-- ── World boss credit quests ──────────────────────────────────────────────────
+-- Midnight world bosses register completion via quest credit, not raid lockouts
+-- (which is why GetSavedWorldBossInfo never populated). The umbrella questID
+-- below flips when ANY world boss has been killed this week; the per-boss
+-- entries identify which one.
+ns.worldBossWeekly = 93913   -- "Midnight: World Boss" umbrella
+
+ns.worldBosses = {
+    { name = "Lu'ashal",    questID = 92560 },
+    { name = "Cragpine",    questID = 92123 },
+    { name = "Thorm'belan", questID = 92034 },
+    { name = "Predaxas",    questID = 92636 },
+}

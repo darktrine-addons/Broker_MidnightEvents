@@ -61,16 +61,19 @@ sf:SetScript("OnEvent", function(self, event, name)
     db.chars[charKey] = db.chars[charKey] or {}
     local char = db.chars[charKey]
     char.lastLogin       = time()
-    char.weeklyReset     = char.weeklyReset     or 0
-    char.worldBossesDone = char.worldBossesDone or {}
+    char.weeklyReset     = char.weeklyReset or 0
+    char.worldBoss       = char.worldBoss   or { done = false }
+    char.weeklies        = char.weeklies    or {}
+    char.worldBossesDone = nil  -- legacy, replaced by worldBoss table
     ns.char = char
 
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state.
     local currentReset = CurrentWeeklyResetEpoch()
     if currentReset and char.weeklyReset < currentReset then
-        char.worldBossesDone = {}
-        char.weeklyReset     = currentReset
+        char.worldBoss   = { done = false }
+        char.weeklies    = {}
+        char.weeklyReset = currentReset
     end
 
     -- Register minimap button (LibDBIcon manages show/hide via right-click menu).
@@ -78,10 +81,6 @@ sf:SetScript("OnEvent", function(self, event, name)
     if LibDBIcon and ns.broker then
         LibDBIcon:Register("Broker_MidnightEvents", ns.broker, db.minimapIcon)
     end
-
-    -- Kick the world-boss lockout cache; UPDATE_INSTANCE_INFO will fire when
-    -- the server replies and Core.lua picks it up from there.
-    if RequestRaidInfo then RequestRaidInfo() end
 
     -- ── Settings panel ────────────────────────────────────────────────────────
 
