@@ -82,7 +82,19 @@ ns.eventToggles = {
 -- harvest cycle of the actual weekly IDs (accept the quest on a char, /reload,
 -- DevHarvest captures the live ID).
 ns.weeklies = {
-    { key = "haranir", questID = 89268, label = "Lost Legends" },
+    { key = "abundance", questID = 89507, label = "Abundant Offerings" },
+    { key = "haranir",   questID = 89268, label = "Lost Legends"       },
+}
+
+-- Candidate weeklies — harvested but not yet confirmed as the right ID for a
+-- known design row. Not consumed by Core; promote into ns.weeklies once the
+-- mapping is verified (accept on a fresh char, /reload, observe DevHarvest).
+ns.candidateWeeklies = {
+    -- 95468 "Hope in the Darkest Corners" (frequency 2, weekly).
+    -- Possibly the Stormarion "Stand Your Ground" weekly under a different
+    -- name, possibly something else event-tied. Seen active on Elune/Sundowner
+    -- on 2026-05-11; needs cross-check on another char to confirm pickup point.
+    -- { key = "stormarion", questID = 95468, label = "Hope in the Darkest Corners" },
 }
 
 -- ── World boss credit quests ──────────────────────────────────────────────────
