@@ -105,15 +105,12 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.bountifulSeen       = char.bountifulSeen       or {}
     char.bountifulResetEpoch = char.bountifulResetEpoch or 0
 
-    -- Per-char, per-day cache of event NAMES that have appeared in the
-    -- scheduler at any point today. Used to flag scheduler-filtered
-    -- events (Abundance, Void Assaults) as "✓ claimed" when they
-    -- subsequently disappear from the scheduler API but remain visible
-    -- on the continent map. Keyed by NAME because the same event has
-    -- different areaPoiIDs in the scheduler vs the continent-map API
-    -- (e.g. Herbalism Grotto = 8527 scheduler / 8676 continent map).
-    char.eventScheduledToday      = char.eventScheduledToday      or {}
-    char.eventScheduledResetEpoch = char.eventScheduledResetEpoch or 0
+    -- The earlier eventScheduledToday cache turned out unnecessary — the
+    -- claimed-today heuristic in Core.lua reads source + isTimed + current
+    -- scheduler view directly, no session memory required. Clean up if
+    -- present from a prior install.
+    char.eventScheduledToday      = nil
+    char.eventScheduledResetEpoch = nil
 
     ns.char = char
 

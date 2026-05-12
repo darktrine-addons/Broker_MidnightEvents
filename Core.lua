@@ -211,9 +211,7 @@ end
 
 -- Set of event names that the scheduler API currently knows about — either
 -- in the Ongoing list, currently-firing Scheduled, or future Scheduled
--- within the cached window. The complement (names cached as "seen in
--- scheduler today" but currently missing) marks an event as claimed by
--- this char.
+-- within the cached window. Drives the "claimed today" detection heuristic.
 local function CurrentSchedulerNames()
     local set = {}
     if not ns.Events then return set end
@@ -229,35 +227,26 @@ local function CurrentSchedulerNames()
     return set
 end
 
--- Maintain char.eventScheduledToday — accumulating set of event names
--- that have appeared in the scheduler at any point today on this char.
--- Wipe on daily reset.
-local function UpdateEventClaimedToday()
-    if not ns.char then return end
-    local reset = CurrentDailyResetEpoch()
-    if reset and (ns.char.eventScheduledResetEpoch or 0) < reset then
-        ns.char.eventScheduledToday      = {}
-        ns.char.eventScheduledResetEpoch = reset
-    end
-    ns.char.eventScheduledToday = ns.char.eventScheduledToday or {}
-    for name in pairs(CurrentSchedulerNames()) do
-        ns.char.eventScheduledToday[name] = true
-    end
-end
-
--- Compute the set of event names "claimed today" on this char: names that
--- the scheduler knew about earlier today but is currently filtering out.
--- Caller filters tooltip rows by source == "map-event" before applying,
--- since events that only ever appear via the map (Prey) shouldn't get
--- the claimed annotation.
-local function GetClaimedTodaySet()
-    local claimed = {}
-    if not (ns.char and ns.char.eventScheduledToday) then return claimed end
-    local current = CurrentSchedulerNames()
-    for name in pairs(ns.char.eventScheduledToday) do
-        if not current[name] then claimed[name] = true end
-    end
-    return claimed
+-- Heuristic test: is this event entry presumed to be claimed today by the
+-- current char?
+--
+--   ev.source == "map-event"  — comes via continent-map scan, not scheduler
+--   ev.isTimed                — has a finite firing window, so it's a
+--                                scheduler-eligible event (rules out Prey
+--                                and other untimed continuous POIs)
+--   not current[ev.name]      — scheduler is currently filtering it out
+--
+-- All three together: the scheduler stopped returning this scheduler-
+-- eligible event for this char, but it's still visible on the world map.
+-- That's the disappearance-as-completion signal Blizzard's API gives us.
+--
+-- Works cold (player logs in already-claimed) — the per-session cache
+-- approach I tried before couldn't catch that case.
+local function IsLikelyClaimed(ev, currentScheduler)
+    return ev.source == "map-event"
+       and ev.isTimed
+       and ev.name
+       and not currentScheduler[ev.name]
 end
 
 -- Reconcile char.bountifulSeen with the live Events list. Wipe on daily
@@ -423,7 +412,7 @@ local function BuildTooltip()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
     local now = time()
-    local claimedToday = GetClaimedTodaySet()
+    local currentScheduler = CurrentSchedulerNames()
     local CHECK = "|A:common-icon-checkmark:14:14|a"
 
     -- ── Section: Now ──────────────────────────────────────────────────────────
@@ -445,13 +434,11 @@ local function BuildTooltip()
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
 
-            -- Scheduler-filtered events surface via the continent-map branch
-            -- with source="map-event". If the name was in the scheduler
-            -- earlier today and isn't now, treat as claimed-today for this
-            -- char (per-event reward already collected).
-            local isClaimed = (ev.source == "map-event")
-                              and ev.name
-                              and claimedToday[ev.name]
+            -- Scheduler-filtered events surface via the continent-map
+            -- branch with source="map-event". Heuristic: a timed map-event
+            -- whose name isn't in the current scheduler view is presumed
+            -- claimed today on this char. Works cold (no session cache).
+            local isClaimed = IsLikelyClaimed(ev, currentScheduler)
 
             local valueText, vr, vg, vb
             if kind == "ongoing" then
@@ -840,7 +827,6 @@ end)
 if ns.Events and ns.Events.RegisterListener then
     ns.Events.RegisterListener(function()
         UpdateBountifulSeen()
-        UpdateEventClaimedToday()
         UpdateBrokerText()
         if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
             BuildTooltip()
@@ -862,3 +848,45 @@ f:SetScript("OnUpdate", function(self, dt)
         end
     end
 end)
+
+-- Dev diagnostic: dump the raw C_EventScheduler view to chat so we can
+-- diagnose "Upcoming shows only one entry" or "wrong event shown" issues
+-- without round-tripping through SavedVariables.
+SLASH_BMESCHED1 = "/mesched"
+SlashCmdList.BMESCHED = function()
+    if not C_EventScheduler then
+        print("|cffffcc00MidnightEvents|r — C_EventScheduler unavailable")
+        return
+    end
+    local ongoing   = C_EventScheduler.GetOngoingEvents   and C_EventScheduler.GetOngoingEvents()   or {}
+    local scheduled = C_EventScheduler.GetScheduledEvents and C_EventScheduler.GetScheduledEvents() or {}
+    print(string.format(
+        "|cffffcc00MidnightEvents|r scheduler: ongoing=%d, scheduled=%d, hasData=%s, time=%d",
+        #ongoing, #scheduled,
+        tostring(C_EventScheduler.HasData and C_EventScheduler.HasData()),
+        time()))
+    local function resolveName(poiID)
+        if not (C_EventScheduler.GetEventUiMapID and C_AreaPoiInfo
+                and C_AreaPoiInfo.GetAreaPOIInfo) then return "?" end
+        local mid = C_EventScheduler.GetEventUiMapID(poiID)
+        if not mid then return "?" end
+        local info = C_AreaPoiInfo.GetAreaPOIInfo(mid, poiID)
+        return info and info.name or "?"
+    end
+    print("|cffffcc00Ongoing:|r")
+    for i, ev in ipairs(ongoing) do
+        print(string.format("  [%d] poi=%d  claimed=%s  %s",
+            i, ev.areaPoiID, tostring(ev.rewardsClaimed), resolveName(ev.areaPoiID)))
+    end
+    print("|cffffcc00Scheduled (first 10):|r")
+    for i = 1, math.min(10, #scheduled) do
+        local ev = scheduled[i]
+        local dt = (ev.startTime or 0) - time()
+        local when = dt > 0 and string.format("+%dm", math.floor(dt / 60))
+                            or string.format("-%dm (active until +%dm)",
+                                math.floor(-dt / 60),
+                                math.floor(((ev.endTime or 0) - time()) / 60))
+        print(string.format("  [%d] poi=%d  start %s  %s",
+            i, ev.areaPoiID, when, resolveName(ev.areaPoiID)))
+    end
+end
