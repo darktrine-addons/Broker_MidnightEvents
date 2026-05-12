@@ -154,6 +154,57 @@ local function GetSoonest()
     return soonest, soonestSecs, soonestKind
 end
 
+-- Epoch of the most recent daily reset (drives bountiful-delve cache TTL).
+-- Returns nil if the API isn't ready (rare, early-load).
+local function CurrentDailyResetEpoch()
+    if C_DateAndTime and C_DateAndTime.GetSecondsUntilDailyReset then
+        local s = C_DateAndTime.GetSecondsUntilDailyReset()
+        if s and s > 0 then
+            return time() + s - 86400
+        end
+    end
+    return nil
+end
+
+-- Reconcile char.bountifulSeen with the live Events list. Wipe on daily
+-- reset; otherwise additive. Currently-visible bountifuls get cached so
+-- they survive disappearing from the live list (the user-visible signal
+-- for "this character completed this delve today").
+--
+-- Belt-and-suspenders: if the live list is non-empty but disjoint from the
+-- cache, the rotation shifted independently of the daily clock (rare). Wipe
+-- and rebuild rather than carrying yesterday's set forward.
+local function UpdateBountifulSeen()
+    if not ns.char then return end
+
+    local reset = CurrentDailyResetEpoch()
+    if reset and (ns.char.bountifulResetEpoch or 0) < reset then
+        ns.char.bountifulSeen       = {}
+        ns.char.bountifulResetEpoch = reset
+    end
+    ns.char.bountifulSeen = ns.char.bountifulSeen or {}
+
+    local visible = ns.Events and ns.Events.GetBountifulDelves() or {}
+
+    if #visible > 0 and next(ns.char.bountifulSeen) then
+        local overlap = false
+        for _, d in ipairs(visible) do
+            if ns.char.bountifulSeen[d.areaPoiID] then overlap = true; break end
+        end
+        if not overlap then ns.char.bountifulSeen = {} end
+    end
+
+    for _, d in ipairs(visible) do
+        if not ns.char.bountifulSeen[d.areaPoiID] then
+            ns.char.bountifulSeen[d.areaPoiID] = {
+                name      = d.name,
+                atlasName = d.atlasName,
+                mapID     = d.mapID,
+            }
+        end
+    end
+end
+
 -- Current-character weekly progress: how many enabled rows are done out of
 -- the total enabled set. World Boss counts as one row when its display
 -- toggle is on. Returns (done, total).
@@ -358,24 +409,66 @@ local function BuildTooltip()
 
     -- ── Section: Bountiful Delves (today) ─────────────────────────────────────
     -- Daily-rotating bountiful Delve POIs surfaced via C_AreaPoiInfo, not the
-    -- event scheduler. Per-Delve completion tracking will land in a later
-    -- phase once we harvest per-Delve kill-credit quest IDs; for now we just
-    -- show the active list so the user knows which delves are bountiful
-    -- today. Section is suppressed when the list is empty (cross-expansion
-    -- char, mid-init, etc.) so the tooltip doesn't grow a stub header.
+    -- event scheduler. GetDelvesForMap filters out delves the current char
+    -- has already completed today, so disappearance from the live list IS
+    -- the completion signal — no per-Delve quest-ID tracking needed. We
+    -- snapshot first-seen entries into char.bountifulSeen and render the
+    -- union with ✓ marks for entries no longer visible.
     if SectionEnabled("delves") then
-    local delves = ns.Events and ns.Events.GetBountifulDelves() or {}
-    if #delves > 0 then
+    local seen = ns.char and ns.char.bountifulSeen or {}
+    local visible = ns.Events and ns.Events.GetBountifulDelves() or {}
+
+    -- Visible set for fast "currently bountiful?" lookup.
+    local visibleByID = {}
+    for _, d in ipairs(visible) do visibleByID[d.areaPoiID] = true end
+
+    -- Materialise the cache into a sorted row list. Entries in `seen` but not
+    -- in `visible` are marked done.
+    local rows = {}
+    for poiID, d in pairs(seen) do
+        rows[#rows + 1] = {
+            poiID     = poiID,
+            name      = d.name or "Delve",
+            atlasName = d.atlasName,
+            done      = not visibleByID[poiID],
+        }
+    end
+    table.sort(rows, function(a, b)
+        if a.done ~= b.done then return not a.done end  -- outstanding first
+        return (a.name or "") < (b.name or "")
+    end)
+
+    if #rows > 0 then
+        local CHECK = "|A:common-icon-checkmark:14:14|a"
+        local CROSS = "|A:common-icon-redx:14:14|a"
+
+        local doneCount = 0
+        for _, r in ipairs(rows) do if r.done then doneCount = doneCount + 1 end end
+        local total = #rows
+        local sr, sg, sb = CV_r, CV_g, CV_b
+        if doneCount == total then sr, sg, sb = 0.6, 0.6, 0.6 end
+
         GameTooltip:AddLine(" ")
         GameTooltip:AddDoubleLine(
             "Bountiful Delves (today)",
-            #delves .. " active",
-            CL_r, CL_g, CL_b, CV_r, CV_g, CV_b)
-        for _, d in ipairs(delves) do
-            local label = d.atlasName
-                          and ("|A:" .. d.atlasName .. ":16:16|a " .. (d.name or "Delve"))
-                          or  (d.name or "Delve")
-            GameTooltip:AddLine(label, CV_r, CV_g, CV_b)
+            doneCount .. "/" .. total .. " done",
+            CL_r, CL_g, CL_b, sr, sg, sb)
+
+        for _, r in ipairs(rows) do
+            local label = r.atlasName
+                          and ("|A:" .. r.atlasName .. ":16:16|a " .. r.name)
+                          or  r.name
+            local valueText, lr, lg, lb, vr, vg, vb
+            if r.done then
+                valueText = CHECK
+                lr, lg, lb = 0.55, 0.55, 0.55
+                vr, vg, vb = 0.6, 0.6, 0.6
+            else
+                valueText = CROSS
+                lr, lg, lb = CV_r, CV_g, CV_b
+                vr, vg, vb = CH_r, CH_g, CH_b
+            end
+            GameTooltip:AddDoubleLine(label, valueText, lr, lg, lb, vr, vg, vb)
         end
     end
     end  -- SectionEnabled("delves")
@@ -613,6 +706,7 @@ end)
 -- AREA_POIS_UPDATED for continuous map-only POIs, and PEW continent rediscovery).
 if ns.Events and ns.Events.RegisterListener then
     ns.Events.RegisterListener(function()
+        UpdateBountifulSeen()
         UpdateBrokerText()
         if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
             BuildTooltip()

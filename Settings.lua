@@ -91,6 +91,13 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.worldBoss       = char.worldBoss   or { done = false }
     char.weeklies        = char.weeklies    or {}
     char.worldBossesDone = nil  -- legacy, replaced by worldBoss table
+
+    -- Phase 10: bountiful delve completion cache (daily-reset cycle).
+    -- bountifulSeen is the snapshot of bountifuls observed today; entries
+    -- missing from the live list are rendered as completed.
+    char.bountifulSeen       = char.bountifulSeen       or {}
+    char.bountifulResetEpoch = char.bountifulResetEpoch or 0
+
     ns.char = char
 
     -- Weekly reset detection: if the most recent reset is newer than the one
