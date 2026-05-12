@@ -115,11 +115,15 @@ local function CollectCurrencies()
     local seen = {}
     if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo) then return out end
 
-    local function record(id, info)
-        if not (info and info.name and info.name ~= "") or seen[id] then return end
+    -- Permissive recorder: include any non-nil return from the API. Missing
+    -- name doesn't disqualify — the diagnostic value of "we tried this ID
+    -- and got SOMETHING back" outweighs the few empty rows it lets through.
+    local function record(id, info, source)
+        if not info or seen[id] then return end
         seen[id] = true
         out[#out + 1] = {
             currencyID                = id,
+            source                    = source,
             name                      = info.name,
             quantity                  = info.quantity,
             maxQuantity               = info.maxQuantity,
@@ -132,7 +136,7 @@ local function CollectCurrencies()
     end
 
     for _, id in ipairs(CURRENCY_PROBE_IDS) do
-        record(id, C_CurrencyInfo.GetCurrencyInfo(id))
+        record(id, C_CurrencyInfo.GetCurrencyInfo(id), "probe")
     end
 
     local n = C_CurrencyInfo.GetCurrencyListSize
@@ -141,7 +145,7 @@ local function CollectCurrencies()
         local info = C_CurrencyInfo.GetCurrencyListInfo
                      and C_CurrencyInfo.GetCurrencyListInfo(i) or nil
         if info and not info.isHeader and info.currencyTypesID then
-            record(info.currencyTypesID, info)
+            record(info.currencyTypesID, info, "list")
         end
     end
 
@@ -197,7 +201,68 @@ local function CollectEventState()
     return out
 end
 
-local function Refresh()
+-- Diagnostic snapshot of raw API surfaces. Captures whatever the
+-- underlying calls return so we can iterate on filter bugs off-disk
+-- without re-deploying probes. Cheap; ~5 fields per refresh.
+local function CollectDiag(lastEvent)
+    local d = { lastEvent = lastEvent, capturedAt = time() }
+
+    if GetServerTime then d.serverTime = GetServerTime() end
+
+    -- C_EventScheduler probe
+    if C_EventScheduler then
+        d.scheduler = {
+            hasData   = C_EventScheduler.HasData    and C_EventScheduler.HasData()    or nil,
+            canShow   = C_EventScheduler.CanShowEvents and C_EventScheduler.CanShowEvents() or nil,
+            continent = C_EventScheduler.GetActiveContinentName
+                        and C_EventScheduler.GetActiveContinentName() or nil,
+        }
+        local ongoing = C_EventScheduler.GetOngoingEvents
+                        and C_EventScheduler.GetOngoingEvents() or nil
+        local scheduled = C_EventScheduler.GetScheduledEvents
+                          and C_EventScheduler.GetScheduledEvents() or nil
+        d.scheduler.ongoingCount   = ongoing   and #ongoing   or nil
+        d.scheduler.scheduledCount = scheduled and #scheduled or nil
+        -- First few raw scheduled entries (areaPoiID + start/end) so we can
+        -- see what the API is returning without serialising the full list.
+        if scheduled and #scheduled > 0 then
+            d.scheduler.scheduledSample = {}
+            for i = 1, math.min(5, #scheduled) do
+                local ev = scheduled[i]
+                d.scheduler.scheduledSample[i] = {
+                    areaPoiID      = ev.areaPoiID,
+                    startTime      = ev.startTime,
+                    endTime        = ev.endTime,
+                    rewardsClaimed = ev.rewardsClaimed,
+                }
+            end
+        end
+    end
+
+    -- C_CurrencyInfo probe (Shard of Dundun)
+    if C_CurrencyInfo then
+        d.currency = {
+            listSize = C_CurrencyInfo.GetCurrencyListSize
+                       and C_CurrencyInfo.GetCurrencyListSize() or nil,
+        }
+        local shard = C_CurrencyInfo.GetCurrencyInfo
+                      and C_CurrencyInfo.GetCurrencyInfo(3376)
+        if type(shard) == "table" then
+            d.currency.shardRaw = {
+                name                   = shard.name,
+                quantity               = shard.quantity,
+                maxQuantity            = shard.maxQuantity,
+                quantityEarnedThisWeek = shard.quantityEarnedThisWeek,
+            }
+        else
+            d.currency.shardRaw = tostring(shard)
+        end
+    end
+
+    return d
+end
+
+local function Refresh(lastEvent)
     Broker_MidnightEventsHarvest = Broker_MidnightEventsHarvest or {}
     Broker_MidnightEventsHarvest[CharKey()] = {
         timestamp   = time(),
@@ -206,6 +271,7 @@ local function Refresh()
         active      = CollectActive(),
         currencies  = CollectCurrencies(),
         eventState  = CollectEventState(),
+        _diag       = CollectDiag(lastEvent),
     }
 end
 
@@ -282,7 +348,7 @@ f:RegisterEvent("EVENT_SCHEDULER_UPDATE")
 f:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= addonName then return end
-        Refresh()
+        Refresh(event)
         return
     end
 
@@ -314,18 +380,19 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         RecordQuest(questID, pendingGiver and "accept" or "auto")
         pendingGiver = nil
-        Refresh()
+        Refresh(event)
         return
     end
 
     if event == "PLAYER_ENTERING_WORLD" then
         ScanActiveLog()
-        Refresh()
+        Refresh(event)
         return
     end
 
-    -- QUEST_TURNED_IN, QUEST_REMOVED: just refresh the per-char snapshot so
-    -- the active/completed lists stay current. No catalogue write — those
-    -- events don't reveal new acceptance metadata.
-    Refresh()
+    -- QUEST_TURNED_IN, QUEST_REMOVED, EVENT_SCHEDULER_UPDATE: just refresh
+    -- the per-char snapshot. The first two keep active/completed fresh; the
+    -- third keeps eventState's rewardsClaimed fresh post-completion. No
+    -- catalogue write — those events don't reveal new acceptance metadata.
+    Refresh(event)
 end)
