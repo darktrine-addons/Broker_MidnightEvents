@@ -127,31 +127,80 @@ local function GetSoonest()
     return soonest, soonestSecs, soonestKind
 end
 
-local function UpdateBrokerText()
-    if not ns.Events or not ns.Events.HasData() then
-        broker.text = "Midnight Events"
-        return
+-- Current-character weekly progress: how many enabled rows are done out of
+-- the total enabled set. World Boss counts as one row when its display
+-- toggle is on. Returns (done, total).
+local function WeeklyProgress()
+    if not ns.char then return 0, 0 end
+    local done, total = 0, 0
+    local showWB = not ns.db or ns.db.showWorldBosses ~= false
+    if showWB then
+        total = total + 1
+        if ns.char.worldBoss and ns.char.worldBoss.done then
+            done = done + 1
+        end
     end
-    local ev, secs, kind = GetSoonest()
-    if not ev then
-        broker.text = "Midnight Events"
-        return
+    if ns.weeklies and ns.char.weeklies then
+        for _, w in ipairs(ns.weeklies) do
+            total = total + 1
+            if ns.char.weeklies[w.key] then
+                done = done + 1
+            end
+        end
     end
+    return done, total
+end
+
+-- Render the right-hand event tag for the broker text. Returns (text, urgent).
+-- `urgent` flags the firing-now / soon-firing cases so the caller can pick an
+-- amber color override over the default.
+local function FormatEventTag(ev, secs, kind)
+    if not ev then return nil, false end
     local short = ShortName(ev.name)
-    local body, hex
     if kind == "ongoing" then
-        body = short .. "  ongoing"
-        hex  = "ffffff"
-    elseif kind == "upcoming" then
-        body = short .. " in " .. FormatRemaining(secs)
-        hex  = secs < 5 * 60 and "ff9919" or "a6bff2"  -- urgent / soft blue
-    else  -- "active"
-        if secs and secs <= 0 then
-            body = short .. "  now!"
-            hex  = "ff9919"
+        return short .. " ongoing", false
+    end
+    if kind == "upcoming" then
+        return short .. " in " .. FormatRemaining(secs), (secs and secs <= 5 * 60)
+    end
+    -- "active"
+    if not secs or secs <= 0 then
+        return short .. " now!", true
+    end
+    return short .. " " .. FormatRemaining(secs), (secs <= 5 * 60)
+end
+
+local function UpdateBrokerText()
+    local done, total = WeeklyProgress()
+
+    local ev, secs, kind
+    if ns.Events and ns.Events.HasData() then
+        ev, secs, kind = GetSoonest()
+    end
+    local eventTag, eventUrgent = FormatEventTag(ev, secs, kind)
+
+    local body, hex
+    if total == 0 then
+        -- Nothing trackable (e.g. ns.char not yet bootstrapped). Brief
+        -- placeholder; clears once weeklies populate on first refresh.
+        body = "Midnight Events"
+        hex  = "808080"
+    elseif done >= total then
+        if eventTag then
+            body = "All done · " .. eventTag
+            hex  = eventUrgent and "ff9919" or "55cc55"
         else
-            body = short .. "  " .. FormatRemaining(secs) .. " left"
-            hex  = (secs and secs < 5 * 60) and "ff9919" or "ffffff"
+            body = "All done this week"
+            hex  = "5a8a5a"
+        end
+    else
+        local progress = "Weeklies " .. done .. "/" .. total
+        if eventTag then
+            body = progress .. " · " .. eventTag
+            hex  = eventUrgent and "ff9919" or "ffffff"
+        else
+            body = progress
+            hex  = "ffffff"
         end
     end
     broker.text = "|cff" .. hex .. body .. "|r"
