@@ -356,6 +356,30 @@ local function BuildTooltip()
     end
     end  -- SectionEnabled("upcoming")
 
+    -- ── Section: Bountiful Delves (today) ─────────────────────────────────────
+    -- Daily-rotating bountiful Delve POIs surfaced via C_AreaPoiInfo, not the
+    -- event scheduler. Per-Delve completion tracking will land in a later
+    -- phase once we harvest per-Delve kill-credit quest IDs; for now we just
+    -- show the active list so the user knows which delves are bountiful
+    -- today. Section is suppressed when the list is empty (cross-expansion
+    -- char, mid-init, etc.) so the tooltip doesn't grow a stub header.
+    if SectionEnabled("delves") then
+    local delves = ns.Events and ns.Events.GetBountifulDelves() or {}
+    if #delves > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddDoubleLine(
+            "Bountiful Delves (today)",
+            #delves .. " active",
+            CL_r, CL_g, CL_b, CV_r, CV_g, CV_b)
+        for _, d in ipairs(delves) do
+            local label = d.atlasName
+                          and ("|A:" .. d.atlasName .. ":16:16|a " .. (d.name or "Delve"))
+                          or  (d.name or "Delve")
+            GameTooltip:AddLine(label, CV_r, CV_g, CV_b)
+        end
+    end
+    end  -- SectionEnabled("delves")
+
     -- ── Section: This Week (CharName) ─────────────────────────────────────────
     -- Outstanding rows render at the top in white with an orange ✗ icon (or
     -- green 'available' for the world boss, where we want a positive prompt

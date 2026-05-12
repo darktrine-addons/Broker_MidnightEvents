@@ -20,10 +20,11 @@ local DEFAULT_CONTINENT_ID = 2537
 local CONTINENT_TYPE = (Enum and Enum.UIMapType and Enum.UIMapType.Continent) or 2
 
 local state = {
-    continentMapID = DEFAULT_CONTINENT_ID,
-    active         = {},  -- events firing now (scheduler ongoing + currently-firing scheduled + continuous map-event POIs)
-    upcoming       = {},  -- scheduled events with startTime > now, sorted ascending
-    lastUpdate     = 0,
+    continentMapID  = DEFAULT_CONTINENT_ID,
+    active          = {},  -- events firing now (scheduler ongoing + currently-firing scheduled + continuous map-event POIs)
+    upcoming        = {},  -- scheduled events with startTime > now, sorted ascending
+    bountifulDelves = {},  -- today's bountiful delves on the continent map
+    lastUpdate      = 0,
 }
 
 local listeners = {}
@@ -229,6 +230,34 @@ local function Refresh()
         return (a.startTime or 0) < (b.startTime or 0)
     end)
 
+    -- 4. Bountiful Delves on the continent map. Distinct POI category from
+    --    events — pulled via GetDelvesForMap, filtered by the "delves-
+    --    bountiful" atlas. The continent-map query returns one canonical
+    --    entry per delve (no cross-zone duplicates), so no isPrimaryMapForPOI
+    --    dedup is needed here. Rotation refreshes daily; the AREA_POIS_UPDATED
+    --    hook on this module catches the swap.
+    wipe(state.bountifulDelves)
+    if C_AreaPoiInfo and C_AreaPoiInfo.GetDelvesForMap then
+        local mapID = state.continentMapID
+        local ids   = C_AreaPoiInfo.GetDelvesForMap(mapID) or {}
+        for _, poiID in ipairs(ids) do
+            local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+            if info and info.atlasName == "delves-bountiful" then
+                state.bountifulDelves[#state.bountifulDelves + 1] = {
+                    areaPoiID        = poiID,
+                    name             = info.name,
+                    atlasName        = info.atlasName,
+                    iconWidgetSet    = info.iconWidgetSet,
+                    tooltipWidgetSet = info.tooltipWidgetSet,
+                    mapID            = mapID,
+                }
+            end
+        end
+        table.sort(state.bountifulDelves, function(a, b)
+            return (a.name or "") < (b.name or "")
+        end)
+    end
+
     state.lastUpdate = now
     FireChanged()
 end
@@ -283,6 +312,14 @@ end
 
 function ns.Events.GetContinentMapID()
     return state.continentMapID
+end
+
+-- Today's bountiful delves on the Midnight continent map. Each entry:
+--   { areaPoiID, name, atlasName, iconWidgetSet, tooltipWidgetSet, mapID }
+-- Sorted alphabetically by name for stable render order. Rotation refreshes
+-- daily; the AREA_POIS_UPDATED listener picks the swap up.
+function ns.Events.GetBountifulDelves()
+    return state.bountifulDelves
 end
 
 function ns.Events.GetLastUpdate()
