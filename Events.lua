@@ -19,6 +19,11 @@ ns.Events = ns.Events or {}
 local DEFAULT_CONTINENT_ID = 2537
 local CONTINENT_TYPE = (Enum and Enum.UIMapType and Enum.UIMapType.Continent) or 2
 
+-- Per-zone uiMapIDs used to warm POI metadata at login (see WarmZonePois).
+-- Same set as Data.lua's harvest zones — kept inline here so Events.lua has
+-- no dependency on the harvest code path (which is dev-only).
+local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437, 2424, 2393 }
+
 local state = {
     continentMapID  = DEFAULT_CONTINENT_ID,
     active          = {},  -- events firing now (scheduler ongoing + currently-firing scheduled + continuous map-event POIs)
@@ -184,6 +189,32 @@ local function BuildMapEntry(poiID, info)
         secondsLeft      = secondsLeft,
         isLocked         = info.isLocked,
     }
+end
+
+-- Warm the account-wide POI name cache for every Midnight zone. Iterating
+-- C_AreaPoiInfo.GetEventsForMap forces the client to load zone POI data;
+-- without this, GetAreaPOIInfo for a scheduler-active POI returns nil when
+-- the player is in a different zone than the POI's host (the data is lazy).
+-- Caching the resolved names makes the Now / Upcoming tooltip render proper
+-- "Abundance: Skinning Den" labels instead of "Event in Zul'Aman" fallbacks,
+-- regardless of which zone the player is currently standing in.
+local function WarmZonePois()
+    if not (C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap
+            and C_AreaPoiInfo.GetAreaPOIInfo and ns.db) then
+        return
+    end
+    ns.db.eventNameCache = ns.db.eventNameCache or {}
+    for _, mapID in ipairs(MIDNIGHT_ZONES) do
+        local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
+        for _, poiID in ipairs(ids) do
+            if not ns.db.eventNameCache[poiID] then
+                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+                if info and info.name then
+                    ns.db.eventNameCache[poiID] = info.name
+                end
+            end
+        end
+    end
 end
 
 -- ── Core refresh ──────────────────────────────────────────────────────────────
@@ -399,6 +430,7 @@ f:RegisterEvent("AREA_POIS_UPDATED")
 f:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         state.continentMapID = DiscoverContinent()
+        WarmZonePois()
         if C_EventScheduler and C_EventScheduler.RequestEvents then
             C_EventScheduler.RequestEvents()
         end
