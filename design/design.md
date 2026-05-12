@@ -18,9 +18,8 @@ A single LDB broker button focused on **live world event timers and the weeklies
   - Saltheril's Soiree ("Fortify the Runestones")
   - Stormarion Assault weekly ("Stand Your Ground")
   - Legends of the Haranir (weekly scenario)
-  - Midnight: Void Assaults (Lady Liadrin umbrella)
+  - Lady Liadrin's Weekly Choice (choose ~4 of 7 "Midnight: …" quests per char per week)
   - Bountiful Delve weekly (paired with the daily timer)
-  - A Call to Battle (PvP weekly — small footprint, BG win counter)
 - Tier 3 — only the currencies that come from Tier 1 events (Shards of Dundun, Field Accolades, Latent Arcana)
 
 **Out of scope (cede to Midnight Routine):**
@@ -33,6 +32,7 @@ A single LDB broker button focused on **live world event timers and the weeklies
 - Vaeli Housing Weekly
 - Ritual Sites
 - Decor Duels
+- A Call to Battle / Archmage Aethas Sunreaver weekly slot (rotates with Timewalking and other non-event content; not event-tied)
 
 ## Non-Goals
 
@@ -95,21 +95,15 @@ Binary done/not-done checks with no live countdown. Refresh on login and on `QUE
 
 | Activity | Display | API | Notes |
 |---|---|---|---|
-| **Prey Hunts** | `N 4/4 · H 4/4 · NM 3/3` (12 contracts total: 4 zones × 3 tiers) | `IsQuestFlaggedCompleted` × 12 | NM tier locks until Preyseeker Rank 4. When locked, render NM tier as `NM —` greyed. Weekly *quest* asks for 3 Nightmare hunts (per icy-veins May 2026); raw contract cap is 4 per tier. |
+| **Prey Hunts** | `N 4/4 · H 4/4 · NM 3/3` (12 contracts total: 4 zones × 3 tiers) | `IsQuestFlaggedCompleted` × 12 + 94446 for the NM weekly | NM tier locks until Preyseeker Rank 4. When locked, render NM tier as `NM —` greyed. The weekly *quest* "A Nightmarish Task" (questID **94446**) asks for 3 Nightmare hunts; raw contract cap is 4 per tier. |
 | **World Bosses** | `Lu'ashal ✓ · Cragpine ✗ · Thorm'belan ✗ · Predaxas ✓` | `GetSavedWorldBossInfo(index)` iterate, check `locked` | Native API; truth at runtime regardless of rotation model. |
-| **Saltheril's Soiree** ("Fortify the Runestones") | binary `✓ / ✗` | `IsQuestFlaggedCompleted` | Eversong runestone weekly. Quest ID: TBD. |
-| **Stormarion Assault weekly** ("Stand Your Ground") | `0/2` or `0/1` (TBD) | `IsQuestFlaggedCompleted` | Voidstorm. Required-runs-per-week TBD. |
-| **Legends of the Haranir** (warband) | binary | `IsQuestFlaggedCompleted` | Solo scenario. |
-| **Midnight: Void Assaults** (Lady Liadrin weekly) | binary or objective progress | `IsQuestFlaggedCompleted` *or* `C_QuestLog.GetQuestObjectives` | Quest giver: Lady Liadrin. Single weekly umbrella; Strikes/Incursions presumably contribute to its objectives — confirm objective format at implementation. Quest ID: TBD. |
-| **Bountiful Delve weekly** (1st of the week) | binary | `IsQuestFlaggedCompleted` | Paired with the Tier 1 daily Bountiful marker. |
+| **Saltheril's Soiree** ("Fortify the Runestones") | binary `✓ / ✗` | `IsQuestFlaggedCompleted` | Eversong runestone weekly. Quest ID: TBD (93889 "Midnight: Saltheril's Soiree" is the Liadrin-umbrella variant, not the direct Soiree weekly). |
+| **Stormarion Assault weekly** ("Stand Your Ground", questID **94581**) | binary `✓ / ✗` | `IsQuestFlaggedCompleted(94581)` | Voidstorm WQ. Confirmed via Wowhead 2026-05-12. The Liadrin-umbrella variant (93892 "Midnight: Stormarion Assault" — 3 Singularity Anchor waves) is a separate quest tracked under the Liadrin row. |
+| **Legends of the Haranir** (warband) | binary | `IsQuestFlaggedCompleted(89268)` | Solo scenario. |
+| **Lady Liadrin's Weekly Choice** | binary `✓ / ✗` (any pool member completed) | `IsQuestFlaggedCompleted` over the pool | Lady Liadrin offers up to ~4 of a pool of 7 "Midnight: …" quests per char per week; completing one locks the others on that char. All freq=3, all reward Spark of Radiance + Apex Cache. Pool (harvested 2026-05-12): 93769 Housing, 93889 Saltheril's Soiree, 93892 Stormarion Assault, 93909 Delves, 93911 Dungeons, 94457 Battlegrounds, 95842 Void Assaults. Implementation: `any(IsQuestFlaggedCompleted(qid) for qid in pool)`. |
+| **Bountiful Delve weekly** (1st of the week) | binary | `IsQuestFlaggedCompleted` | Paired with the Tier 1 daily Bountiful marker. Quest ID: TBD. |
 
-#### Group: PvP
-
-| Activity | Display | API | Notes |
-|---|---|---|---|
-| **A Call to Battle** | `0/4` BG wins | `C_QuestLog.GetQuestObjectives` (or `IsQuestFlaggedCompleted` for binary) | Quest giver: Archmage Aethas Sunreaver. Objective: Win 4 Battleground matches. Rewards: 5 Mark of Honor + 175 Conquest. Quest ID: TBD. |
-
-**Out of scope (cede to Midnight Routine):** Voidforge questline, Silvermoon Weekly Dungeon, T11 Delve weekly, M+ weekly best, Vaeli Housing Weekly, Ritual Sites, Patron Orders / Profession Knowledge, Decor Duels, full Great Vault breakdown.
+**Out of scope (cede to Midnight Routine):** Voidforge questline, Silvermoon Weekly Dungeon, T11 Delve weekly, M+ weekly best, Vaeli Housing Weekly, Ritual Sites, Patron Orders / Profession Knowledge, Decor Duels, full Great Vault breakdown, A Call to Battle / Aethas Sunreaver weekly slot.
 
 **Event-driven pattern (applies to all rows above):**
 
@@ -151,9 +145,8 @@ Broker_MidnightEventsDB = {
     -- per-row toggles (keys match activity slugs)
     enabledRows      = { prey = true, bosses = true, soiree = true,
                          stormarion = true, haranir = true,
-                         voidAssaults = true,         -- Lady Liadrin weekly
-                         bountifulDelve = true,
-                         callToBattle = true },
+                         liadrin = true,              -- Lady Liadrin's Weekly Choice (pool)
+                         bountifulDelve = true },
     -- per-event toggles (Tier 1 timers)
     enabledEvents    = { abundance = true, stormarionAssault = true,
                          slayersRise = true, bountifulDelveDaily = true,
@@ -237,11 +230,10 @@ The tooltip has three top-level sections. The middle section (**This Week**) spl
 │      Prey Hunts        N 4/4 · H 4/4 · NM 3/3   │
 │      World Bosses      Lu'a ✓ · Crag ✗ · …      │
 │      Saltheril's Soiree                    ✓    │
-│      Stand Your Ground                     0/2  │
+│      Stand Your Ground                     ✓    │
 │      Legends of the Haranir          (warband)  │
-│      Midnight: Void Assaults  (Liadrin) 5/8     │
+│      Liadrin Weekly      (Delves picked)   ✓    │
 │      Bountiful Delve weekly                ✓    │
-│  ▶ PvP                A Call to Battle  3/4 BG  │
 │  ▶ Currencies         Shards 5/8 · Accol 6/?    │
 ├─ Alts (12 tracked, 8 active this reset) ────────┤
 │  Prey hunts:    5/12 done                       │
@@ -252,7 +244,9 @@ The tooltip has three top-level sections. The middle section (**This Week**) spl
 └─────────────────────────────────────────────────┘
 ```
 
-Sub-group headers show `▼` when expanded, `▶` when collapsed. Collapsed groups can show a one-line summary on the header line (e.g. "PvP ▶ A Call to Battle 3/4") so the user keeps the most important data visible without expanding.
+Sub-group headers show `▼` when expanded, `▶` when collapsed. Collapsed groups can show a one-line summary on the header line (e.g. "Currencies ▶ Shards 5/8") so the user keeps the most important data visible without expanding.
+
+The Liadrin Weekly row shows the *chosen* pool member in parentheses when one has been accepted on the current character (e.g. "Liadrin Weekly (Delves picked) ✗"). If no choice has been made yet the parenthetical is omitted; if multiple pool members are somehow active concurrently (rare), the most recent acceptance wins for display.
 
 ## Alts — Two-Mode Display
 
@@ -265,7 +259,7 @@ Alts (12 tracked, 8 active this reset)
    Prey hunts:    5/12 done
    World Boss:    7/12 done
    Soiree:        9/12 done
-   Void Assaults: 4/12 done
+   Liadrin:       4/12 done
 ```
 
 Aggregates **enabled activity rows** across all tracked characters. Constant size regardless of alt count. "Active this reset" = logged in since the most recent weekly reset; characters with stale data are excluded from the denominator (so "5/12" reflects only fresh data).
@@ -278,11 +272,11 @@ Triggered by **Shift-Right-Click** on the broker button (or a dedicated keybind)
 ┌─ Broker_MidnightEvents · Alts ────────────────────────[X]┐
 │ Filter: [All ▼]  Sort: [Last login ▼]   12 chars         │
 ├──────────────────────────────────────────────────────────┤
-│ Char       Prey   Boss  Soir  Stmrn  Haran  VoidA   BGs  │
-│ Thrandis   12/12   ✓     ✓     2/2    ✓      8/8    4/4  │
-│ Miravel     8/12   ✗     ✗     0/2    ✓      5/8    1/4  │
-│ Tessadra    —      —     —     —      —      —      —    │
-│ Hawken     12/12   ✓     ✓     1/2    ✗      7/8    4/4  │
+│ Char       Prey   Boss  Soir  Stmrn  Haran  Liadrin     │
+│ Thrandis   12/12   ✓     ✓     ✓      ✓      Soiree  ✓  │
+│ Miravel     8/12   ✗     ✗     ✗      ✓      Delves  ✗  │
+│ Tessadra    —      —     —     —      —      —          │
+│ Hawken     12/12   ✓     ✓     ✓      ✗      Dung.   ✓  │
 │ … (scrollable)                                           │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -314,9 +308,8 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
    - "Show inactive events" master toggle (greys out events not currently firing)
 
 - **Weekly Checklist**
-   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Midnight: Void Assaults, Bountiful Delve)
+   - **World** sub-group toggle + per-row toggles (Prey, Bosses, Soiree, Stormarion, Haranir, Liadrin Weekly, Bountiful Delve)
       - Prey: optional toggles per tier (Normal/Hard/Nightmare)
-   - **PvP** sub-group toggle + per-row toggles (A Call to Battle)
    - **Currencies** sub-group toggle + per-currency toggles (Shards of Dundun, Field Accolades, Latent Arcana)
 
 - **Display**
@@ -359,19 +352,20 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 | # | Item | Status |
 |---|---|---|
 | 1 | ~~Silvermoon Weekly Dungeon Quest~~ | **Out of scope (Option Y, May 2026):** ceded to Midnight Routine. |
-| 2 | ~~A Call to Battle quest giver/objective~~ | **Resolved (in-game inspection):** Archmage Aethas Sunreaver, Win 4 BG matches, 5 Mark of Honor + 175 Conquest. Quest ID still TBD. |
-| 3 | **Stormarion Assault weekly quest count** | Confirm whether the weekly completion requires 1 or 2 runs. Resolve via in-game inspection. |
-| 4 | ~~Lady Liadrin Weekly~~ | **Resolved (user, May 2026):** This *is* "Midnight: Void Assaults" — single umbrella row. Quest ID still TBD. |
+| 2 | ~~A Call to Battle quest~~ | **Out of scope (May 2026 harvest):** the Aethas Sunreaver weekly slot rotates with Timewalking ("A Savage Path Through Time", 93613) and other non-event content. Not event-tied; ceded to Midnight Routine. |
+| 3 | ~~Stormarion Assault weekly quest count~~ | **Resolved (Wowhead 2026-05-12):** binary completion of "Stand Your Ground" (questID **94581**, Voidstorm WQ). |
+| 4 | ~~Lady Liadrin Weekly~~ | **Resolved (harvest 2026-05-12, superseded earlier resolution):** Liadrin offers a *choice pool* of 7 known "Midnight: …" quests (93769 Housing, 93889 Saltheril's Soiree, 93892 Stormarion Assault, 93909 Delves, 93911 Dungeons, 94457 Battlegrounds, 95842 Void Assaults). Up to 4 are offered per char per week; completing one locks the others on that char. Slot tracking: `any(IsQuestFlaggedCompleted(qid) for qid in pool)`. |
 | 5 | ~~Voidforge questline weekly gate~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
-| 6 | ~~Vaeli Housing Weekly~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
+| 6 | ~~Vaeli Housing Weekly~~ | **Out of scope (Option Y):** ceded to Midnight Routine. (Harvest confirms: 95413 "Community Engagement", Vaeli giver.) |
 | 7 | ~~Ritual Sites~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
-| 8 | **Midnight: Void Assaults objective format** | Whether the weekly is binary completion or has an objective bar. Use `C_QuestLog.GetQuestObjectives(questID)` once quest ID is known. |
+| 8 | ~~Midnight: Void Assaults objective format~~ | **Obsolete (folded into Q4):** there is no single "Midnight: Void Assaults" umbrella weekly — 95842 is one option in the Liadrin pool. The standalone Void Assault zone-specific weeklies (94385 Eversong, 94386 Zul'Aman) are a separate slot covered by the Stormarion-Assault-style implementation pattern. |
 | 9 | ~~Patron Order quest IDs per profession~~ | **Out of scope (Option Y):** ceded to Midnight Routine. |
-| 10 | **Prey Hunt quest IDs** | 12 IDs total (4 zones × 3 tiers); plus the Nightmare-3-hunts weekly quest ID. |
+| 10 | **Prey Hunt quest IDs** | NM weekly "A Nightmarish Task" resolved as questID **94446** (3 Nightmare Hunts). Remaining: 12 individual contract IDs (4 zones × 3 tiers) for the per-tier `N/H/NM` display. |
 | 11 | **Field Accolades currency ID** | For Tier 3 cap display. |
 | 12 | **Latent Arcana currency ID** | For Tier 3 cap display. |
 | 13 | **Shards of Dundun currency ID** | For Tier 3 cap display. |
-| 14 | **Soiree, Stormarion, Liadrin, Bountiful Delve weekly quest IDs** | 4 quest IDs for `IsQuestFlaggedCompleted`. |
+| 14 | **Soiree, Bountiful Delve weekly quest IDs** | Soiree direct weekly ("Fortify the Runestones") and Bountiful Delve weekly still TBD. Stormarion resolved (Q3); Liadrin resolved (Q4). |
+| 15 | **Void Assault zone-rotation pool** | Confirmed 94385 (Eversong) + 94386 (Zul'Aman) so far. Harandar/Voidstorm variants likely exist; harvest when rotation lands on those zones. |
 
 ## General Risks
 

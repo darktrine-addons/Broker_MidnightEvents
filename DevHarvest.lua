@@ -32,7 +32,7 @@ local HARVEST_ZONES = {
     [2405] = true,   -- Voidstorm
     [2413] = true,   -- Harandar
     [2437] = true,   -- Zul'Aman
-    [110]  = true,   -- Silvermoon City (uiMapID TBD-verify)
+    [2393] = true,   -- Silvermoon City (retail Midnight; confirmed via Artherio harvest)
 }
 
 local function CharKey()
@@ -154,10 +154,20 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     if event == "QUEST_DETAIL" then
         -- Player opened an NPC quest dialogue. Stash the giver name so the
-        -- next QUEST_ACCEPTED can attribute it. Cleared on accept or after a
-        -- short window via QUEST_FINISHED-style fallback (handled implicitly:
-        -- next QUEST_DETAIL overwrites).
-        pendingGiver = UnitName("questnpc") or UnitName("npc") or nil
+        -- next QUEST_ACCEPTED can attribute it. Cleared on accept; the next
+        -- QUEST_DETAIL overwrites if no accept fires.
+        --
+        -- Don't fall through to UnitName("npc") — observed leaking the
+        -- player's own name on quests accepted via gossip-selector flows
+        -- (e.g. Lady Liadrin's choice-of-4 weekly). "target" is a safer
+        -- secondary because the player is usually targeting the NPC.
+        -- Guard explicitly: if either resolves to the player, record nil
+        -- (= unknown giver) rather than a wrong attribution.
+        local me   = UnitName("player")
+        local name = UnitName("questnpc")
+        if not name or name == me then name = UnitName("target") end
+        if name == me then name = nil end
+        pendingGiver = name
         return
     end
 

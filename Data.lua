@@ -74,28 +74,99 @@ ns.eventToggles = {
 -- here is the rendering order. `questID` is checked via IsQuestFlaggedCompleted
 -- on PEW + QUEST_TURNED_IN + QUEST_REMOVED.
 --
--- NOTE: the `Midnight: <X>` umbrella quests we initially used (93889 Saltheril,
--- 93892 Stormarion, 93909 Delves, 94457 Battlegrounds, 95842 Void Assaults)
--- turned out to be one-time intro/unlock quests, not weekly trackers. They
--- flag permanently after first engagement with each event, so every character
--- who ever touched the content reads as "done forever." Removed pending a
--- harvest cycle of the actual weekly IDs (accept the quest on a char, /reload,
--- DevHarvest captures the live ID).
+-- Harvest curation 2026-05-12 (Elune/Artherio + Elune/Sundowner via DevHarvest,
+-- cross-referenced on Wowhead). Two architectural findings worth noting:
+--
+--   1. The "Midnight: <X>" family (93769/93889/93892/93909/93911/94457/95842)
+--      is NOT one-time intro quests, as a prior note here speculated. They
+--      are Lady Liadrin's weekly *choice pool*: she offers ~4 of the pool
+--      per char per week, all freq=3, all rewarding Spark of Radiance +
+--      Apex Cache. Completing one on a char locks the others on that char.
+--      The slot is in-scope per design (open question #4) but needs multi-
+--      questID "any completed = done" semantics; parked in candidates below
+--      until Core supports it.
+--
+--   2. The PvP/Call-to-Battle slot off Archmage Aethas Sunreaver appears
+--      to be a multi-content rotation. This week (Artherio) it gave 93613
+--      "A Savage Path Through Time" which Wowhead classifies as the
+--      Timewalking weekly (5 TW dungeons). The actual "A Call to Battle"
+--      questID is still unharvested. Slot parked in candidates pending more
+--      data — and 93613 itself is out-of-scope (TW is not event-tied).
 ns.weeklies = {
-    { key = "abundance", questID = 89507, label = "Abundant Offerings" },
-    { key = "haranir",   questID = 89268, label = "Lost Legends"       },
+    { key = "abundance",     questID = 89507, label = "Abundant Offerings" },
+    { key = "stormarion",    questID = 94581, label = "Stand Your Ground"  },  -- Stormarion Assault weekly (Voidstorm WQ)
+    { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task" },  -- Prey NM tier weekly (3 Nightmare Hunts)
+    { key = "haranir",       questID = 89268, label = "Lost Legends"       },
 }
 
--- Candidate weeklies — harvested but not yet confirmed as the right ID for a
--- known design row. Not consumed by Core; promote into ns.weeklies once the
--- mapping is verified (accept on a fresh char, /reload, observe DevHarvest).
+-- Candidate weeklies — harvested IDs that map to design rows but can't be
+-- promoted as-is. Two reasons a row stays here:
+--   (a) needs multi-questID slot semantics Core doesn't yet implement
+--       (rotation pool, choose-N umbrella) — promote once Core iterates a
+--       `questIDs = {a, b, …}` field with "any flagged completed = done";
+--   (b) classification still uncertain after this harvest pass — needs
+--       another reset or another char to disambiguate.
+-- Entries are commented-out Lua so the structure stays self-documenting
+-- and trivial to uncomment when the gate clears.
 ns.candidateWeeklies = {
-    -- 95468 "Hope in the Darkest Corners" (frequency 2, weekly).
-    -- Possibly the Stormarion "Stand Your Ground" weekly under a different
-    -- name, possibly something else event-tied. Seen active on Elune/Sundowner
-    -- on 2026-05-11; needs cross-check on another char to confirm pickup point.
-    -- { key = "stormarion", questID = 95468, label = "Hope in the Darkest Corners" },
+    -- (a) Lady Liadrin's weekly choice pool. Up to ~4 offered per char per
+    --     week from this pool of 7 known IDs. The current `voidAssaults` row
+    --     the design specced as Liadrin's umbrella is really this whole pool.
+    -- { key = "liadrin", label = "Lady Liadrin's Weekly", questIDs = {
+    --       93769,  -- Midnight: Housing               (5 Community Coupons)
+    --       93889,  -- Midnight: Saltheril's Soiree    (faction favor)
+    --       93892,  -- Midnight: Stormarion Assault    (3 Singularity Anchor Wave events)
+    --       93909,  -- Midnight: Delves                (any seasonal Delve)
+    --       93911,  -- Midnight: Dungeons              (any seasonal Dungeon)
+    --       94457,  -- Midnight: Battlegrounds         (any BG in Midnight)
+    --       95842,  -- Midnight: Void Assaults         (Void Strikes + Incursions)
+    --   } },
+
+    -- (a) Void Assault zone-rotation weekly. The active zone changes weekly
+    --     (per 12.0.5 design note); each zone has its own questID. Two
+    --     confirmed; Harandar / Voidstorm variants likely exist and surface
+    --     when the rotation lands on those zones.
+    -- { key = "voidAssaultZone", label = "Void Assault (active zone)", questIDs = {
+    --       94385,  -- Void Assaults: Eversong Woods   (giver: Ranger Captain Lilatha)
+    --       94386,  -- Void Assaults: Zul'Aman
+    --   } },
+
+    -- (a) A Call to Battle / Aethas Sunreaver rotation slot. Holding the
+    --     slot open until the actual Call to Battle (Win 4 BGs) ID is
+    --     harvested next reset. 93613 (TW) is NOT a member — it's OOS.
+    -- { key = "callToBattle", label = "A Call to Battle", questIDs = {
+    --       -- TBD: actual A Call to Battle questID
+    --   } },
+
+    -- (b) 91700 "Darkness Unmade" — freq=2: eliminate 2 rares in Stormarion
+    --     Citadel (drops Stormarion Core; suggested 3 players). Distinct
+    --     from Stand Your Ground (94581); may be a bonus Stormarion weekly
+    --     deserving its own row, or a sub-objective of a hidden umbrella.
+    --     Sample size 1 (Artherio pew-scan). Needs another char to confirm.
+    -- { key = "stormarionRares", questID = 91700, label = "Darkness Unmade" },
+
+    -- (b) 95468 "Hope in the Darkest Corners" — freq=2: complete WQs,
+    --     Dungeons, and Delves in Midnight zones, rewards Quel'Thalas
+    --     Adventurer's Cache. Generic adventurer umbrella; most likely
+    --     belongs under out-of-scope (MR territory). Kept here as the
+    --     user's hold pending a final scope call.
+    -- { key = "advCache", questID = 95468, label = "Hope in the Darkest Corners" },
 }
+
+-- ── Out-of-scope reference (ceded to Midnight Routine) ────────────────────────
+-- Quest IDs harvested in passing that map to design out-of-scope content.
+-- Block-commented as the user requested — nothing consumes this, it's a
+-- changelog so future harvest passes don't waste curation time re-checking
+-- the same IDs. Uncomment + move to ns.candidateWeeklies if scope changes.
+--
+-- ns.outOfScopeWeeklies = {
+--     -- { questID, title, reason, source }
+--     { 93613, "A Savage Path Through Time",            "Timewalking weekly (5 TW dungeons) — not event-tied",                 "Artherio 2026-05-12 accept (Aethas Sunreaver)"  },
+--     { 93697, "Shimmering Melodies",                   "Profession/enchanting (20 Eversinging Dust → Dolothos, Silvermoon)",  "Artherio 2026-05-12 accept (Dolothos)"          },
+--     { 93755, "Den of Nalorakk",                       "Dungeon weekly (Zul'Aman boss credit) — Silvermoon dungeon family",   "Artherio 2026-05-12 accept (Halduron Brightwing)" },
+--     { 94790, "Research Console: Exploring the Void",  "Generic Voidstorm WQ weekly (3 WQs for Void Researcher Anomander)",   "Artherio 2026-05-12 pew-scan"                   },
+--     { 95413, "Community Engagement",                  "Housing weekly (Vaeli endeavor trader — Vaeli Housing scope)",        "Artherio 2026-05-12 accept (Vaeli)"             },
+-- }
 
 -- ── World boss credit quests ──────────────────────────────────────────────────
 -- Midnight world bosses register completion via per-boss kill-credit quests,
