@@ -209,6 +209,57 @@ local function CurrentDailyResetEpoch()
     return nil
 end
 
+-- Set of event names that the scheduler API currently knows about — either
+-- in the Ongoing list, currently-firing Scheduled, or future Scheduled
+-- within the cached window. The complement (names cached as "seen in
+-- scheduler today" but currently missing) marks an event as claimed by
+-- this char.
+local function CurrentSchedulerNames()
+    local set = {}
+    if not ns.Events then return set end
+    for _, ev in ipairs(ns.Events.GetActive()) do
+        if ev.name and (ev.source == "scheduler-ongoing"
+                        or ev.source == "scheduler-scheduled") then
+            set[ev.name] = true
+        end
+    end
+    for _, ev in ipairs(ns.Events.GetUpcoming()) do
+        if ev.name then set[ev.name] = true end
+    end
+    return set
+end
+
+-- Maintain char.eventScheduledToday — accumulating set of event names
+-- that have appeared in the scheduler at any point today on this char.
+-- Wipe on daily reset.
+local function UpdateEventClaimedToday()
+    if not ns.char then return end
+    local reset = CurrentDailyResetEpoch()
+    if reset and (ns.char.eventScheduledResetEpoch or 0) < reset then
+        ns.char.eventScheduledToday      = {}
+        ns.char.eventScheduledResetEpoch = reset
+    end
+    ns.char.eventScheduledToday = ns.char.eventScheduledToday or {}
+    for name in pairs(CurrentSchedulerNames()) do
+        ns.char.eventScheduledToday[name] = true
+    end
+end
+
+-- Compute the set of event names "claimed today" on this char: names that
+-- the scheduler knew about earlier today but is currently filtering out.
+-- Caller filters tooltip rows by source == "map-event" before applying,
+-- since events that only ever appear via the map (Prey) shouldn't get
+-- the claimed annotation.
+local function GetClaimedTodaySet()
+    local claimed = {}
+    if not (ns.char and ns.char.eventScheduledToday) then return claimed end
+    local current = CurrentSchedulerNames()
+    for name in pairs(ns.char.eventScheduledToday) do
+        if not current[name] then claimed[name] = true end
+    end
+    return claimed
+end
+
 -- Reconcile char.bountifulSeen with the live Events list. Wipe on daily
 -- reset; otherwise additive. Currently-visible bountifuls get cached so
 -- they survive disappearing from the live list (the user-visible signal
@@ -372,6 +423,8 @@ local function BuildTooltip()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
     local now = time()
+    local claimedToday = GetClaimedTodaySet()
+    local CHECK = "|A:common-icon-checkmark:14:14|a"
 
     -- ── Section: Now ──────────────────────────────────────────────────────────
     -- Events currently firing (scheduler ongoing + currently-active scheduled
@@ -391,6 +444,14 @@ local function BuildTooltip()
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
+
+            -- Scheduler-filtered events surface via the continent-map branch
+            -- with source="map-event". If the name was in the scheduler
+            -- earlier today and isn't now, treat as claimed-today for this
+            -- char (per-event reward already collected).
+            local isClaimed = (ev.source == "map-event")
+                              and ev.name
+                              and claimedToday[ev.name]
 
             local valueText, vr, vg, vb
             if kind == "ongoing" then
@@ -418,6 +479,16 @@ local function BuildTooltip()
                     vr, vg, vb = CV_r, CV_g, CV_b
                 end
             end
+
+            -- "Claimed today" override: dim the label + value, append the
+            -- checkmark to the value. Player can still see the row (event
+            -- is still playable for other rewards) but knows the per-event
+            -- bonus is already collected for this char.
+            if isClaimed then
+                vr, vg, vb = 0.55, 0.85, 0.55  -- green, like a ✓ row
+                valueText = CHECK .. " " .. valueText
+            end
+
             GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
     end
@@ -769,6 +840,7 @@ end)
 if ns.Events and ns.Events.RegisterListener then
     ns.Events.RegisterListener(function()
         UpdateBountifulSeen()
+        UpdateEventClaimedToday()
         UpdateBrokerText()
         if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
             BuildTooltip()

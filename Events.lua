@@ -170,7 +170,10 @@ end
 local function Refresh()
     wipe(state.active)
     wipe(state.upcoming)
-    local seen = {}
+    local seen      = {}  -- areaPoiID dedup
+    local seenNames = {}  -- name dedup (scheduler and continent map use
+                          -- different areaPoiIDs for the same event, e.g.
+                          -- Herbalism Grotto = 8527 scheduler / 8676 map)
     local now  = time()
 
     if not C_EventScheduler then
@@ -202,6 +205,7 @@ local function Refresh()
                 if not seen[ev.areaPoiID] then
                     state.active[#state.active + 1] = entry
                     seen[ev.areaPoiID] = true
+                    if poi.name then seenNames[poi.name] = true end
                 end
             elseif st > now then
                 state.upcoming[#state.upcoming + 1] = entry
@@ -222,13 +226,16 @@ local function Refresh()
                 state.active[#state.active + 1] =
                     BuildSchedulerEntry(ev, poi, "scheduler-ongoing")
                 seen[ev.areaPoiID] = true
+                if poi.name then seenNames[poi.name] = true end
             end
         end
     end
 
     -- 3. Continuous map-event POIs (Prey, etc.) on the continent map → active.
     --    Filter to event atlases, current events, and unlocked POIs. Dedup
-    --    against scheduler entries via the `seen` set.
+    --    against scheduler entries via BOTH the areaPoiID seen[] set AND
+    --    seenNames[] (scheduler and continent map use different POI IDs for
+    --    the same underlying event — name is the canonical key).
     if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
         local mapID = state.continentMapID
         local ids   = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
@@ -236,9 +243,11 @@ local function Refresh()
             if not seen[poiID] then
                 local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
                 if info and info.isCurrentEvent and not info.isLocked
-                   and LooksLikeEventAtlas(info.atlasName) then
+                   and LooksLikeEventAtlas(info.atlasName)
+                   and not (info.name and seenNames[info.name]) then
                     state.active[#state.active + 1] = BuildMapEntry(poiID, info)
                     seen[poiID] = true
+                    if info.name then seenNames[info.name] = true end
                 end
             end
         end
