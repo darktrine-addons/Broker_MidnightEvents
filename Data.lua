@@ -7,6 +7,28 @@
 
 local addonName, ns = ...
 
+-- ── Wave-cadence overrides ────────────────────────────────────────────────────
+-- Events that are continuously visible as a POI (so the scheduler tags them
+-- "ongoing", isTimed=false) but internally cycle waves on a wall-clock
+-- schedule. We synthesize a "next wave in Xm" countdown for these from server
+-- time, since the tooltipWidgetSet is empty between waves and provides no
+-- reliable countdown source.
+--
+-- Format: { period = seconds-between-waves, offset = seconds-from-the-hour }.
+-- For Stormarion Assault, waves fire at :01 and :31 of each server hour →
+-- period 30 min, offset 60 s.
+ns.waveCadence = {
+    ["Stormarion Assault"] = { period = 1800, offset = 60 },
+}
+
+function ns.GetWaveCountdown(eventName)
+    local c = eventName and ns.waveCadence and ns.waveCadence[eventName]
+    if not c then return nil end
+    local now = (GetServerTime and GetServerTime()) or time()
+    local elapsed = (now - (c.offset or 0)) % c.period
+    return c.period - elapsed
+end
+
 -- ── Tier 2: weekly checklist quest IDs ────────────────────────────────────────
 -- Each entry = one row in the tooltip's "This Week" section, in render order.
 -- Two row shapes supported by Core's IsWeeklySlotDone:

@@ -50,7 +50,9 @@ end
 -- so countdowns decrement live between Events refreshes.
 --   "upcoming" — startTime > now; secs = startTime - now
 --   "active"   — currently firing; secs = endTime - now (or secondsLeft fallback)
---   "ongoing"  — untimed (Stormarion / Legends); secs = nil
+--   "wave"     — continuously-ongoing POI with an internal wave cadence
+--                (Stormarion Assault); secs = wall-clock seconds to next wave
+--   "ongoing"  — untimed and no cadence override (Legends); secs = nil
 local function EventRemaining(ev, now)
     if ev.startTime and ev.startTime > now then
         return ev.startTime - now, "upcoming"
@@ -60,6 +62,12 @@ local function EventRemaining(ev, now)
     end
     if ev.secondsLeft and ev.secondsLeft > 0 then
         return ev.secondsLeft, "active"
+    end
+    -- Untimed POI: try a wave-cadence prediction before falling back to
+    -- ambient "ongoing" state. Stormarion Assault is the current user.
+    if ns.GetWaveCountdown then
+        local waveSecs = ns.GetWaveCountdown(ev.name)
+        if waveSecs then return waveSecs, "wave" end
     end
     return nil, "ongoing"
 end
@@ -182,6 +190,12 @@ local function FormatEventTag(ev, secs, kind)
     if kind == "upcoming" then
         return short .. " in " .. FormatRemaining(secs), (secs and secs <= 5 * 60)
     end
+    if kind == "wave" then
+        if not secs or secs <= 0 then
+            return short .. " wave!", true
+        end
+        return short .. " next " .. FormatRemaining(secs), (secs <= 5 * 60)
+    end
     -- "active"
     if not secs or secs <= 0 then
         return short .. " now!", true
@@ -189,39 +203,63 @@ local function FormatEventTag(ev, secs, kind)
     return short .. " " .. FormatRemaining(secs), (secs <= 5 * 60)
 end
 
+-- Display toggles for the broker bar. Default both on if the SV hasn't been
+-- populated yet (early-load race window or fresh install).
+local function BrokerShow(key)
+    local b = ns.db and ns.db.broker
+    if not b then return true end
+    return b[key] ~= false
+end
+
 local function UpdateBrokerText()
     local done, total = WeeklyProgress()
+    local showProgress = BrokerShow("showProgress")
+    local showEvent    = BrokerShow("showEvent")
 
     local ev, secs, kind
-    if ns.Events and ns.Events.HasData() then
+    if showEvent and ns.Events and ns.Events.HasData() then
         ev, secs, kind = GetSoonest()
     end
     local eventTag, eventUrgent = FormatEventTag(ev, secs, kind)
 
     local body, hex
-    if total == 0 then
-        -- Nothing trackable (e.g. ns.char not yet bootstrapped). Brief
-        -- placeholder; clears once weeklies populate on first refresh.
-        body = "Midnight Events"
-        hex  = "808080"
-    elseif done >= total then
-        if eventTag then
-            body = "All done · " .. eventTag
-            hex  = eventUrgent and "ff9919" or "55cc55"
+
+    -- Compose progress chunk (left side).
+    local progress
+    if showProgress and total > 0 then
+        if done >= total then
+            progress = "All done"
         else
-            body = "All done this week"
-            hex  = "5a8a5a"
+            progress = "Weeklies " .. done .. "/" .. total
         end
-    else
-        local progress = "Weeklies " .. done .. "/" .. total
-        if eventTag then
-            body = progress .. " · " .. eventTag
-            hex  = eventUrgent and "ff9919" or "ffffff"
+    end
+
+    if progress and eventTag then
+        body = progress .. " · " .. eventTag
+        if eventUrgent then
+            hex = "ff9919"
+        elseif done >= total then
+            hex = "55cc55"
+        else
+            hex = "ffffff"
+        end
+    elseif progress then
+        if done >= total then
+            body = (showEvent and "All done this week") or progress  -- "All done" alone reads odd; expand it when event tag is suppressed too
+            hex  = "5a8a5a"
         else
             body = progress
             hex  = "ffffff"
         end
+    elseif eventTag then
+        body = eventTag
+        hex  = eventUrgent and "ff9919" or "ffffff"
+    else
+        -- Both halves suppressed or no data — placeholder so the bar isn't blank.
+        body = "Midnight Events"
+        hex  = "808080"
     end
+
     broker.text = "|cff" .. hex .. body .. "|r"
 end
 
@@ -263,6 +301,19 @@ local function BuildTooltip()
             local valueText, vr, vg, vb
             if kind == "ongoing" then
                 valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
+            elseif kind == "wave" then
+                -- Continuous POI with an internal wave cycle. Show the
+                -- countdown to the next wave, rendered like an upcoming row.
+                if secs and secs <= 0 then
+                    valueText, vr, vg, vb = "wave now!", CH_r, CH_g, CH_b
+                else
+                    valueText = "next in " .. FormatRemaining(secs)
+                    if secs and secs < 5 * 60 then
+                        vr, vg, vb = CH_r, CH_g, CH_b
+                    else
+                        vr, vg, vb = 0.65, 0.75, 0.95
+                    end
+                end
             elseif secs and secs <= 0 then
                 valueText, vr, vg, vb = "now!", CH_r, CH_g, CH_b
             else
@@ -473,14 +524,30 @@ end
 
 broker.OnClick = function(self, button)
     if button == "LeftButton" then
-        -- Drop the user into Blizzard's native events panel. Prefer the first
-        -- currently-active event so the panel auto-focuses on something
-        -- relevant; fall back to opening the continent map if nothing's firing.
+        -- Drop the user into Blizzard's native events panel:
+        --   1. Open the world map with the quest log / side-panel shown.
+        --   2. Switch the side panel to the Events tab.
+        --   3. Ping the first active event POI so the eye lands on it.
+        -- OpenMapToEventPoi alone doesn't force the side panel open or pick
+        -- the Events tab (it just opens the map + pings) — the world map
+        -- remembers whichever tab the user last viewed, so we drive each step
+        -- explicitly to land on Events reliably.
         local poiID = ns.Events and ns.Events.GetFirstActivePOI()
-        if poiID and OpenMapToEventPoi then
-            OpenMapToEventPoi(poiID)
-        elseif OpenWorldMap and ns.Events then
-            OpenWorldMap(ns.Events.GetContinentMapID())
+        local mapID = ns.Events and ns.Events.GetContinentMapID()
+
+        if WorldMapFrame and WorldMapFrame.HandleUserActionOpenQuestLog then
+            WorldMapFrame:HandleUserActionOpenQuestLog(mapID)
+        elseif OpenWorldMap and mapID then
+            OpenWorldMap(mapID)
+        end
+
+        if QuestMapFrame and QuestMapFrame.SetDisplayMode
+           and QuestLogDisplayMode and QuestLogDisplayMode.Events then
+            QuestMapFrame:SetDisplayMode(QuestLogDisplayMode.Events)
+        end
+
+        if poiID and EventRegistry and EventRegistry.TriggerEvent then
+            EventRegistry:TriggerEvent("PingAreaPOIEvent", poiID)
         end
     elseif button == "RightButton" and not IsShiftKeyDown() then
         if ns.settingsCategoryID then

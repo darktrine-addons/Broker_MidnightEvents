@@ -17,6 +17,10 @@ local defaults = {
         alts     = true,
     },
     showWorldBosses = true,
+    broker = {
+        showProgress = true,   -- "Weeklies N/M" / "All done" left-side chunk
+        showEvent    = true,   -- "Stormarion 12m next" / "Abundance now!" tag
+    },
 }
 
 -- Returns the epoch (seconds) of the most recent weekly reset, or nil if the
@@ -68,6 +72,12 @@ sf:SetScript("OnEvent", function(self, event, name)
     end
 
     if db.showWorldBosses == nil then db.showWorldBosses = defaults.showWorldBosses end
+
+    db.broker = db.broker or {}
+    for k, v in pairs(defaults.broker) do
+        if db.broker[k] == nil then db.broker[k] = v end
+    end
+
     ns.db = db
 
     -- Per-character bootstrap. Key is "Realm/Name" so connected realms with
@@ -132,6 +142,26 @@ sf:SetScript("OnEvent", function(self, event, name)
     wbSetting:SetValueChangedCallback(RefreshUI)
     Settings.CreateCheckbox(category, wbSetting,
         "Display the World Bosses row inside the This Week section.")
+
+    -- Section: Broker bar
+    Settings.RegisterInitializer(category,
+        CreateSettingsListSectionHeaderInitializer("Broker bar", nil))
+
+    local brokerProgressSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_broker_showProgress", "showProgress", db.broker,
+        Settings.VarType.Boolean, "Show weekly progress (N/M)",
+        defaults.broker.showProgress)
+    brokerProgressSetting:SetValueChangedCallback(RefreshUI)
+    Settings.CreateCheckbox(category, brokerProgressSetting,
+        "Show the weekly-progress count (e.g. \"Weeklies 3/7\") on the broker bar.")
+
+    local brokerEventSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_broker_showEvent", "showEvent", db.broker,
+        Settings.VarType.Boolean, "Show next-event tag",
+        defaults.broker.showEvent)
+    brokerEventSetting:SetValueChangedCallback(RefreshUI)
+    Settings.CreateCheckbox(category, brokerEventSetting,
+        "Append the next-firing event (e.g. \"Abundance in 23m\") to the broker bar text.")
 
     Settings.RegisterAddOnCategory(category)
     ns.settingsCategoryID = category:GetID()
