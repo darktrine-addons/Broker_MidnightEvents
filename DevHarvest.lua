@@ -1,8 +1,20 @@
 -- Broker_MidnightEvents - DevHarvest
 -- Development-only module. Two layers:
---   1. Broker_MidnightEventsHarvest      — per-char snapshot of active +
---      completed quest IDs above ID_THRESHOLD. Overwritten on every refresh,
---      so the file mirrors the current quest log.
+--   1. Broker_MidnightEventsHarvest      — per-char snapshot, overwritten on
+--      every refresh. Captures:
+--          completed   — quest IDs above ID_THRESHOLD that have been
+--                        flagged complete
+--          active      — current quest log (title, frequency, mapID)
+--          currencies  — visible currency list with weekly-cap shape
+--                        (quantity, maxQuantity, maxWeeklyQuantity,
+--                         quantityEarnedThisWeek, recharging fields).
+--                        Lets us observe spending vs. earning behaviour
+--                        across the harvest week.
+--          eventState  — C_EventScheduler.GetOngoingEvents snapshot keyed
+--                        by areaPoiID with name + rewardsClaimed. Updates
+--                        on EVENT_SCHEDULER_UPDATE so the post-completion
+--                        rewardsClaimed value lands without re-probing —
+--                        the experiment that resolves Q15.
 --   2. Broker_MidnightEventsQuestCatalogue — account-wide write-once index
 --      keyed by questID, capturing first-acceptance metadata (giver, source,
 --      zone, frequency, title). Accumulates across every char that ever
@@ -69,6 +81,63 @@ local function CollectActive()
     return out
 end
 
+-- Per-char currency snapshot. Walks the visible currency list; cheap (~30
+-- entries). Captures the full weekly-cap shape so we can compare across
+-- chars over the harvest week and notice anomalies (e.g. a currency that
+-- DOES reload mid-week, an account-wide flip, etc.).
+local function CollectCurrencies()
+    local out = {}
+    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize) then return out end
+    local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+    for i = 1, n do
+        local info = C_CurrencyInfo.GetCurrencyListInfo
+                     and C_CurrencyInfo.GetCurrencyListInfo(i) or nil
+        if info and not info.isHeader and info.currencyTypesID then
+            out[#out + 1] = {
+                currencyID                = info.currencyTypesID,
+                name                      = info.name,
+                quantity                  = info.quantity,
+                maxQuantity               = info.maxQuantity,
+                maxWeeklyQuantity         = info.maxWeeklyQuantity,
+                quantityEarnedThisWeek    = info.quantityEarnedThisWeek,
+                canEarnPerWeek            = info.canEarnPerWeek,
+                rechargingAmountPerCycle  = info.rechargingAmountPerCycle,
+                rechargingCycleDurationMS = info.rechargingCycleDurationMS,
+            }
+        end
+    end
+    return out
+end
+
+-- Per-char C_EventScheduler ongoing snapshot. Captures rewardsClaimed per
+-- active event so we can finally resolve Q15: when a char completes an
+-- Abundance run, does the field flip? Compare pre/post across a /reload
+-- bracket. Cheap, refreshes on EVENT_SCHEDULER_UPDATE so the post-completion
+-- value lands without needing a manual probe.
+local function CollectEventState()
+    local out = {}
+    if not (C_EventScheduler and C_EventScheduler.GetOngoingEvents) then return out end
+    if C_EventScheduler.HasData and not C_EventScheduler.HasData() then return out end
+    local events = C_EventScheduler.GetOngoingEvents() or {}
+    for _, ev in ipairs(events) do
+        local name
+        if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
+           and C_EventScheduler.GetEventUiMapID then
+            local mapID = C_EventScheduler.GetEventUiMapID(ev.areaPoiID)
+            if mapID then
+                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, ev.areaPoiID)
+                name = info and info.name
+            end
+        end
+        out[#out + 1] = {
+            areaPoiID      = ev.areaPoiID,
+            rewardsClaimed = ev.rewardsClaimed,
+            name           = name,
+        }
+    end
+    return out
+end
+
 local function Refresh()
     Broker_MidnightEventsHarvest = Broker_MidnightEventsHarvest or {}
     Broker_MidnightEventsHarvest[CharKey()] = {
@@ -76,6 +145,8 @@ local function Refresh()
         playerLevel = UnitLevel and UnitLevel("player") or 0,
         completed   = CollectCompleted(),
         active      = CollectActive(),
+        currencies  = CollectCurrencies(),
+        eventState  = CollectEventState(),
     }
 end
 
@@ -145,6 +216,10 @@ f:RegisterEvent("QUEST_DETAIL")
 f:RegisterEvent("QUEST_ACCEPTED")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("QUEST_REMOVED")
+-- Catches rewardsClaimed flips when the player completes an event run.
+-- Also fires after RequestEvents on login, ensuring the post-login snapshot
+-- has fresh scheduler data.
+f:RegisterEvent("EVENT_SCHEDULER_UPDATE")
 f:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= addonName then return end
