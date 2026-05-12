@@ -63,6 +63,103 @@ local function ResolvePoi(areaPoiID, displayInfo)
     return out
 end
 
+-- Cheap recursive copy for dumping API tables into SVs. Bounded depth so
+-- self-referential or absurd trees can't hang us; widget data sometimes
+-- contains references that would otherwise cause issues.
+local function CopyTable(t, depth)
+    if type(t) ~= "table" or (depth or 0) > 6 then return t end
+    local out = {}
+    for k, v in pairs(t) do
+        if type(v) == "table" then
+            out[k] = CopyTable(v, (depth or 0) + 1)
+        elseif type(v) ~= "function" and type(v) ~= "userdata" then
+            out[k] = v
+        end
+    end
+    return out
+end
+
+-- Walk the player's visible currency list and dump everything. Cheap (the
+-- list is short) and self-documenting — we get IDs + names + per-currency
+-- weekly cap / earned fields in one pass without guessing IDs.
+local function CollectCurrencies()
+    local out = {}
+    if not C_CurrencyInfo or not C_CurrencyInfo.GetCurrencyListSize then return out end
+    local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+    for i = 1, n do
+        local listInfo = C_CurrencyInfo.GetCurrencyListInfo and C_CurrencyInfo.GetCurrencyListInfo(i) or nil
+        if listInfo and not listInfo.isHeader then
+            local id = listInfo.currencyTypesID
+            local detail = id and C_CurrencyInfo.GetCurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(id) or nil
+            out[#out + 1] = {
+                listIndex      = i,
+                currencyID     = id,
+                listInfo       = CopyTable(listInfo),
+                detail         = CopyTable(detail),
+            }
+        end
+    end
+    return out
+end
+
+-- Probe both GetDelvesForMap (if it exists in 12.0) and GetEventsForMap
+-- for each Midnight zone so we can see where the bountiful POIs land.
+local DELVE_PROBE_ZONES = {
+    [2395] = "Eversong Woods",
+    [2405] = "Voidstorm",
+    [2413] = "Harandar",
+    [2437] = "Zul'Aman",
+    [2393] = "Silvermoon City",
+}
+
+local function CollectMapPOIs()
+    local out = {}
+    if not C_AreaPoiInfo then return out end
+    for mapID, zoneLabel in pairs(DELVE_PROBE_ZONES) do
+        local entry = {
+            mapID     = mapID,
+            zoneLabel = zoneLabel,
+            delves    = nil,    -- nil = API absent; {} = API present, empty result
+            events    = nil,
+        }
+        if C_AreaPoiInfo.GetDelvesForMap then
+            local ids = C_AreaPoiInfo.GetDelvesForMap(mapID) or {}
+            entry.delves = {}
+            for _, poiID in ipairs(ids) do
+                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+                entry.delves[#entry.delves + 1] = info and CopyTable(info) or { areaPoiID = poiID, _missing = true }
+            end
+        end
+        if C_AreaPoiInfo.GetEventsForMap then
+            local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
+            entry.events = {}
+            for _, poiID in ipairs(ids) do
+                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+                entry.events[#entry.events + 1] = info and CopyTable(info) or { areaPoiID = poiID, _missing = true }
+            end
+        end
+        out[#out + 1] = entry
+    end
+    return out
+end
+
+-- Dump full widget content for the tooltipWidgetSet IDs we observe on
+-- ongoing/scheduled events. This is how Blizzard renders "Shards 6/8",
+-- wave counters, etc. in the events panel tooltip. If Slayer's Rise is a
+-- sub-widget of Stormarion (setID 1795), it should appear here.
+local function CollectWidgets(setIDs)
+    local out = {}
+    if not C_UIWidgetManager or not C_UIWidgetManager.GetAllWidgetsBySetID then return out end
+    for _, setID in ipairs(setIDs) do
+        local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+        out[#out + 1] = {
+            setID   = setID,
+            widgets = CopyTable(widgets),
+        }
+    end
+    return out
+end
+
 local function Snapshot()
     if not C_EventScheduler then return nil end
     local snap = {
@@ -111,6 +208,22 @@ local function Snapshot()
         }
     end
 
+    -- Collect unique tooltipWidgetSet IDs from everything we've seen so we
+    -- can dump their widget content (Shards counter, wave widget, etc.).
+    local widgetSeen = {}
+    local function noteWidgetSet(ev)
+        local ws = ev and ev._poi and ev._poi.tooltipWidgetSet
+        if ws then widgetSeen[ws] = true end
+    end
+    for _, ev in ipairs(snap.ongoing)   do noteWidgetSet(ev) end
+    for _, ev in ipairs(snap.scheduled) do noteWidgetSet(ev) end
+    local setIDs = {}
+    for ws in pairs(widgetSeen) do setIDs[#setIDs + 1] = ws end
+
+    snap.currencies = CollectCurrencies()
+    snap.mapPOIs    = CollectMapPOIs()
+    snap.widgets    = CollectWidgets(setIDs)
+
     return snap
 end
 
@@ -157,7 +270,12 @@ SlashCmdList.MEPROBE = function()
         print("|cffffcc00MidnightEvents Probe|r snapshot failed — C_EventScheduler missing?")
         return
     end
+    local widgetCount = 0
+    if snap.widgets then for _, w in ipairs(snap.widgets) do widgetCount = widgetCount + (w.widgets and #w.widgets or 0) end end
+    local delveCount = 0
+    if snap.mapPOIs then for _, m in ipairs(snap.mapPOIs) do delveCount = delveCount + (m.delves and #m.delves or 0) end end
     print(string.format(
-        "|cffffcc00MidnightEvents Probe|r captured: hasData=%s, canShow=%s, ongoing=%d, scheduled=%d. /reload to flush to disk.",
-        tostring(snap.hasData), tostring(snap.canShow), #snap.ongoing, #snap.scheduled))
+        "|cffffcc00MidnightEvents Probe|r captured: hasData=%s ongoing=%d scheduled=%d currencies=%d delves=%d widgets=%d. /reload to flush.",
+        tostring(snap.hasData), #snap.ongoing, #snap.scheduled,
+        snap.currencies and #snap.currencies or 0, delveCount, widgetCount))
 end
