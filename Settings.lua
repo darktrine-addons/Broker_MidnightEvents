@@ -92,6 +92,13 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.weeklies        = char.weeklies    or {}
     char.worldBossesDone = nil  -- legacy, replaced by worldBoss table
 
+    -- Class is stable per char (race+faction changes leave it intact); record
+    -- it once at login so the Alts detail panel can color names without
+    -- needing to call UnitClass on every render. fileName is the unlocalized
+    -- key into RAID_CLASS_COLORS.
+    local _, classFile = UnitClass("player")
+    if classFile then char.class = classFile end
+
     -- Phase 10: bountiful delve completion cache (daily-reset cycle).
     -- bountifulSeen is the snapshot of bountifuls observed today; entries
     -- missing from the live list are rendered as completed.
@@ -99,6 +106,12 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.bountifulResetEpoch = char.bountifulResetEpoch or 0
 
     ns.char = char
+
+    -- Phase 8: Alts detail panel geometry. Lazily applied when the panel
+    -- first opens; persisted on drag-stop.
+    db.altsPanel = db.altsPanel or {
+        point = "CENTER", x = 0, y = 0,
+    }
 
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state.

@@ -610,9 +610,11 @@ local function BuildTooltip()
     -- ── Interaction hints ─────────────────────────────────────────────────────
     -- Keyword in orange, description in white (matches Broker: Coords).
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("LeftClick",   "open events panel",
+    GameTooltip:AddDoubleLine("LeftClick",        "open events panel",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
-    GameTooltip:AddDoubleLine("RightClick",  "open settings",
+    GameTooltip:AddDoubleLine("RightClick",       "open settings",
+                              CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
+    GameTooltip:AddDoubleLine("Shift-RightClick", "open alts panel",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
 
     -- ── Footer ────────────────────────────────────────────────────────────────
@@ -666,12 +668,15 @@ broker.OnClick = function(self, button)
         if poiID and EventRegistry and EventRegistry.TriggerEvent then
             EventRegistry:TriggerEvent("PingAreaPOIEvent", poiID)
         end
-    elseif button == "RightButton" and not IsShiftKeyDown() then
-        if ns.settingsCategoryID then
+    elseif button == "RightButton" then
+        if IsShiftKeyDown() then
+            if ns.AltsPanel and ns.AltsPanel.Toggle then
+                ns.AltsPanel.Toggle()
+            end
+        elseif ns.settingsCategoryID then
             Settings.OpenToCategory(ns.settingsCategoryID)
         end
     end
-    -- Shift-RightClick reserved for the Alts detail panel (Phase 8).
 end
 
 -- Exposed so Settings.lua callbacks can refresh both surfaces immediately
@@ -699,6 +704,9 @@ f:SetScript("OnEvent", function(self, event)
     UpdateBrokerText()
     if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
         BuildTooltip()
+    end
+    if ns.AltsPanel and ns.AltsPanel.RefreshIfShown then
+        ns.AltsPanel.RefreshIfShown()
     end
 end)
 

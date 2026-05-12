@@ -18,5 +18,6 @@ Data.lua
 Settings.lua
 Events.lua
 Core.lua
+AltsPanel.lua
 DevHarvest.lua
 EventProbe.lua

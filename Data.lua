@@ -36,14 +36,14 @@ end
 --   { questIDs = {a, b…} } — pool/rotation slot; row done iff any member flagged
 -- Refreshed on PLAYER_ENTERING_WORLD, QUEST_TURNED_IN, QUEST_REMOVED.
 ns.weeklies = {
-    { key = "abundance",       questID = 89507, label = "Abundant Offerings" },  -- Abundance event weekly
-    { key = "stormarion",      questID = 94581, label = "Stand Your Ground"  },  -- Stormarion Assault weekly (Voidstorm WQ)
-    { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task" },  -- Prey NM tier weekly (3 Nightmare Hunts)
+    { key = "abundance",       questID = 89507, label = "Abundant Offerings", short = "Abund" },
+    { key = "stormarion",      questID = 94581, label = "Stand Your Ground",  short = "Stmrn" },
+    { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task", short = "PreyN" },
 
     -- Lady Liadrin's choice pool. She offers ~4 of 7 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward
     -- Spark of Radiance + Apex Cache.
-    { key = "liadrin", label = "Lady Liadrin's Weekly", questIDs = {
+    { key = "liadrin", label = "Lady Liadrin's Weekly", short = "Liad", questIDs = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
           93892,  -- Midnight: Stormarion Assault
@@ -56,12 +56,12 @@ ns.weeklies = {
     -- Void Assault zone-rotation weekly. The active zone changes weekly
     -- (12.0.5 design note); each zone has its own questID. Harandar /
     -- Voidstorm variants likely exist; add when harvest reveals them.
-    { key = "voidAssaultZone", label = "Void Assault (active zone)", questIDs = {
+    { key = "voidAssaultZone", label = "Void Assault (active zone)", short = "VoidA", questIDs = {
           94385,  -- Void Assaults: Eversong Woods
           94386,  -- Void Assaults: Zul'Aman
       } },
 
-    { key = "haranir",         questID = 89268, label = "Lost Legends"       },  -- Haranir warband scenario
+    { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "Haran" },
 }
 
 -- Candidate weeklies — harvested IDs not yet promoted to ns.weeklies. Stay
