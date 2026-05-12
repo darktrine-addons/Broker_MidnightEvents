@@ -64,6 +64,19 @@ ns.weeklies = {
     { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "Haran" },
 }
 
+-- Lady Liadrin pool member → human-friendly short label. Used by the
+-- tooltip to annotate the Liadrin row with which choice the current char
+-- picked this week (e.g. "Lady Liadrin's Weekly (Delves picked)").
+ns.liadrinLabels = {
+    [93769] = "Housing",
+    [93889] = "Soiree",
+    [93892] = "Stormarion",
+    [93909] = "Delves",
+    [93911] = "Dungeons",
+    [94457] = "Battlegrounds",
+    [95842] = "Void Assaults",
+}
+
 -- Candidate weeklies — harvested IDs not yet promoted to ns.weeklies. Stay
 -- here when classification is still uncertain (sample size 1, scope
 -- ambiguous, etc.). Entries are commented-out Lua so the structure is

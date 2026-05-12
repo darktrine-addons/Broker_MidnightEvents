@@ -81,45 +81,89 @@ local function CollectActive()
     return out
 end
 
--- Per-char currency snapshot. Walks the visible currency list; cheap (~30
--- entries). Captures the full weekly-cap shape so we can compare across
--- chars over the harvest week and notice anomalies (e.g. a currency that
--- DOES reload mid-week, an account-wide flip, etc.).
+-- Known Midnight currency IDs (event-tied + reward + crests). Primary lookup
+-- source because GetCurrencyListSize() returns 0 until the player opens the
+-- currency UI at least once per session — useless at PEW. Harvested-known
+-- IDs avoid that lazy-init dependency. Visible-list scan below catches
+-- anything we haven't IDed yet.
+local CURRENCY_PROBE_IDS = {
+    3376,  -- Shard of Dundun         (Abundance weekly budget, max 8)
+    3378,  -- Dawnlight Manaflux      (Soiree-related budget, max 8)
+    3405,  -- Field Accolade          (Void Assaults reward)
+    3377,  -- Unalloyed Abundance     (Abundance reward currency)
+    3379,  -- Brimming Arcana
+    3316,  -- Voidlight Marl
+    3373,  -- Angler Pearls
+    3400,  -- Uncontaminated Void Sample
+    3212,  -- Radiant Spark Dust
+    3310,  -- Coffer Key Shards
+    3028,  -- Restored Coffer Key
+    3056,  -- Kej
+    3383,  -- Adventurer Dawncrest
+    3341,  -- Veteran Dawncrest
+    3343,  -- Champion Dawncrest
+    3345,  -- Hero Dawncrest
+    3347,  -- Myth Dawncrest
+}
+
+-- Per-char currency snapshot. Captures the full weekly-cap shape across
+-- chars so we can observe spending-vs-earning behaviour over the harvest
+-- week. Two-pass: known-ID probe first (reliable), visible-list scan
+-- second (catches new currencies).
 local function CollectCurrencies()
-    local out = {}
-    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize) then return out end
-    local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+    local out  = {}
+    local seen = {}
+    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo) then return out end
+
+    local function record(id, info)
+        if not (info and info.name and info.name ~= "") or seen[id] then return end
+        seen[id] = true
+        out[#out + 1] = {
+            currencyID                = id,
+            name                      = info.name,
+            quantity                  = info.quantity,
+            maxQuantity               = info.maxQuantity,
+            maxWeeklyQuantity         = info.maxWeeklyQuantity,
+            quantityEarnedThisWeek    = info.quantityEarnedThisWeek,
+            canEarnPerWeek            = info.canEarnPerWeek,
+            rechargingAmountPerCycle  = info.rechargingAmountPerCycle,
+            rechargingCycleDurationMS = info.rechargingCycleDurationMS,
+        }
+    end
+
+    for _, id in ipairs(CURRENCY_PROBE_IDS) do
+        record(id, C_CurrencyInfo.GetCurrencyInfo(id))
+    end
+
+    local n = C_CurrencyInfo.GetCurrencyListSize
+              and C_CurrencyInfo.GetCurrencyListSize() or 0
     for i = 1, n do
         local info = C_CurrencyInfo.GetCurrencyListInfo
                      and C_CurrencyInfo.GetCurrencyListInfo(i) or nil
         if info and not info.isHeader and info.currencyTypesID then
-            out[#out + 1] = {
-                currencyID                = info.currencyTypesID,
-                name                      = info.name,
-                quantity                  = info.quantity,
-                maxQuantity               = info.maxQuantity,
-                maxWeeklyQuantity         = info.maxWeeklyQuantity,
-                quantityEarnedThisWeek    = info.quantityEarnedThisWeek,
-                canEarnPerWeek            = info.canEarnPerWeek,
-                rechargingAmountPerCycle  = info.rechargingAmountPerCycle,
-                rechargingCycleDurationMS = info.rechargingCycleDurationMS,
-            }
+            record(info.currencyTypesID, info)
         end
     end
+
     return out
 end
 
--- Per-char C_EventScheduler ongoing snapshot. Captures rewardsClaimed per
--- active event so we can finally resolve Q15: when a char completes an
--- Abundance run, does the field flip? Compare pre/post across a /reload
--- bracket. Cheap, refreshes on EVENT_SCHEDULER_UPDATE so the post-completion
--- value lands without needing a manual probe.
+-- Per-char C_EventScheduler snapshot of every event firing right now —
+-- BOTH the Ongoing list (Stormarion, Legends) AND scheduled entries with
+-- past startTime + future endTime (Abundance variants in progress, Void
+-- Assaults week-long). Captures rewardsClaimed per area POI so we can
+-- finally resolve Q15: pre/post a reward-claim, does the field flip?
+-- Refreshes on EVENT_SCHEDULER_UPDATE so the post-completion value lands
+-- without needing a manual probe.
 local function CollectEventState()
-    local out = {}
+    local out  = {}
+    local seen = {}
     if not (C_EventScheduler and C_EventScheduler.GetOngoingEvents) then return out end
     if C_EventScheduler.HasData and not C_EventScheduler.HasData() then return out end
-    local events = C_EventScheduler.GetOngoingEvents() or {}
-    for _, ev in ipairs(events) do
+
+    local function append(ev, source)
+        if seen[ev.areaPoiID] then return end
+        seen[ev.areaPoiID] = true
         local name
         if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
            and C_EventScheduler.GetEventUiMapID then
@@ -133,8 +177,23 @@ local function CollectEventState()
             areaPoiID      = ev.areaPoiID,
             rewardsClaimed = ev.rewardsClaimed,
             name           = name,
+            source         = source,
         }
     end
+
+    for _, ev in ipairs(C_EventScheduler.GetOngoingEvents() or {}) do
+        append(ev, "ongoing")
+    end
+
+    local now       = time()
+    local scheduled = C_EventScheduler.GetScheduledEvents
+                      and C_EventScheduler.GetScheduledEvents() or {}
+    for _, ev in ipairs(scheduled) do
+        if (ev.startTime or 0) <= now and (ev.endTime or 0) > now then
+            append(ev, "scheduled-active")
+        end
+    end
+
     return out
 end
 

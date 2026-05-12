@@ -96,10 +96,53 @@ local function IsWeeklySlotDone(w)
     return false
 end
 
+-- Find the Liadrin pool questIDs from ns.weeklies. Returns a set for O(1)
+-- lookup, or nil if the Liadrin row isn't defined.
+local function GetLiadrinPool()
+    for _, w in ipairs(ns.weeklies or {}) do
+        if w.key == "liadrin" and w.questIDs then
+            local set = {}
+            for _, qid in ipairs(w.questIDs) do set[qid] = true end
+            return set
+        end
+    end
+    return nil
+end
+
+-- Detect which Liadrin pool member the current char has accepted (or
+-- completed) this week. Stored on ns.char.liadrinChoice as the questID;
+-- the tooltip looks up ns.liadrinLabels for a human-friendly annotation.
+-- Cleared only when the cached choice is no longer in the active log AND
+-- not flagged complete (covers the case where the user abandoned without
+-- picking another).
+local function DetectLiadrinChoice()
+    if not (ns.char and C_QuestLog) then return end
+    local pool = GetLiadrinPool()
+    if not pool then return end
+
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local q = C_QuestLog.GetInfo(i)
+        if q and not q.isHeader and pool[q.questID] then
+            ns.char.liadrinChoice = q.questID
+            return
+        end
+    end
+
+    -- Not in active log. Keep the cached choice if it's flagged complete
+    -- (the user completed it; we still want the "(X picked)" annotation
+    -- next to the green checkmark). Otherwise it was abandoned — clear.
+    local prev = ns.char.liadrinChoice
+    if prev and not C_QuestLog.IsQuestFlaggedCompleted(prev) then
+        ns.char.liadrinChoice = nil
+    end
+end
+
 local function RefreshWeeklies()
     if not ns.char or not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
         return
     end
+
+    DetectLiadrinChoice()
 
     -- Per-row binary weeklies.
     ns.char.weeklies = ns.char.weeklies or {}
@@ -500,8 +543,19 @@ local function BuildTooltip()
         end
         if hasWeeklies then
             for _, w in ipairs(ns.weeklies) do
+                local rowLabel = w.label
+                -- Liadrin row: append "(X picked)" annotation when the
+                -- current char has accepted (or completed) a pool member.
+                if w.key == "liadrin"
+                   and ns.char and ns.char.liadrinChoice
+                   and ns.liadrinLabels then
+                    local picked = ns.liadrinLabels[ns.char.liadrinChoice]
+                    if picked then
+                        rowLabel = rowLabel .. " (" .. picked .. " picked)"
+                    end
+                end
                 rows[#rows + 1] = {
-                    label = w.label,
+                    label = rowLabel,
                     done  = weeklyState[w.key] or false,
                 }
             end
@@ -600,7 +654,7 @@ local function BuildTooltip()
 
             for _, w in ipairs(ns.weeklies or {}) do
                 local done = weeklyDoneCount[w.key] or 0
-                GameTooltip:AddDoubleLine(w.label,
+                GameTooltip:AddDoubleLine(w.short or w.label,
                     done .. "/" .. activeCount .. " done",
                     CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
             end

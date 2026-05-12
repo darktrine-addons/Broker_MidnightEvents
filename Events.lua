@@ -174,21 +174,10 @@ local function Refresh()
         return
     end
 
-    -- 1. Scheduler ongoing → active
-    local rawOngoing = C_EventScheduler.GetOngoingEvents
-                       and C_EventScheduler.GetOngoingEvents() or {}
-    for _, ev in ipairs(rawOngoing) do
-        if not seen[ev.areaPoiID] then
-            local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
-            if poi then
-                state.active[#state.active + 1] =
-                    BuildSchedulerEntry(ev, poi, "scheduler-ongoing")
-                seen[ev.areaPoiID] = true
-            end
-        end
-    end
-
-    -- 2. Scheduler scheduled → active (if currently firing) or upcoming
+    -- 1. Scheduled-currently-firing → active. These carry startTime/endTime
+    --    epochs so the tooltip can render a live "Xh Ym left" countdown.
+    --    Processed BEFORE Ongoing because Ongoing entries for the same POI
+    --    lack endTime — using them would lose the countdown info.
     local rawScheduled = C_EventScheduler.GetScheduledEvents
                          and C_EventScheduler.GetScheduledEvents() or {}
     for _, ev in ipairs(rawScheduled) do
@@ -204,6 +193,23 @@ local function Refresh()
                 end
             elseif st > now then
                 state.upcoming[#state.upcoming + 1] = entry
+            end
+        end
+    end
+
+    -- 2. Scheduler ongoing → active. Picks up persistent events that the
+    --    scheduler doesn't put in the Scheduled list (Stormarion Assault,
+    --    Legends of the Haranir). Dedup against scheduler-scheduled keeps
+    --    the priority right.
+    local rawOngoing = C_EventScheduler.GetOngoingEvents
+                       and C_EventScheduler.GetOngoingEvents() or {}
+    for _, ev in ipairs(rawOngoing) do
+        if not seen[ev.areaPoiID] then
+            local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
+            if poi then
+                state.active[#state.active + 1] =
+                    BuildSchedulerEntry(ev, poi, "scheduler-ongoing")
+                seen[ev.areaPoiID] = true
             end
         end
     end
