@@ -72,48 +72,69 @@ end
 -- Resolve a POI to a flat info table, applying any displayInfo overrides
 -- from the scheduler (atlas swap, hidden description, alternate widget set
 -- — mirrors Blizzard's EventScheduler.lua pattern).
+--
+-- Resilient to nil info from GetAreaPOIInfo: some scheduler entries return
+-- a valid areaPoiID but the POI is filtered out by the API in the player's
+-- current state (e.g. Skinning Den at Zul'Aman returns nil for chars who
+-- aren't physically near). Falls back to a session/account name cache from
+-- prior successful resolutions, then to a "Event in <zone>" synthesis from
+-- C_EventScheduler.GetEventZoneName. Returns nil only when nothing useful
+-- can be assembled at all.
 local function ResolvePoi(areaPoiID, displayInfo)
-    if not (areaPoiID and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo) then
-        return nil
-    end
+    if not areaPoiID then return nil end
+
     local mapID = (C_EventScheduler and C_EventScheduler.GetEventUiMapID
                    and C_EventScheduler.GetEventUiMapID(areaPoiID))
                   or state.continentMapID
-    local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, areaPoiID)
-    if not info then return nil end
+    local info  = (C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
+                   and C_AreaPoiInfo.GetAreaPOIInfo(mapID, areaPoiID)) or nil
 
-    local atlas       = info.atlasName
-    local description = info.description
-    local widgetSet   = info.tooltipWidgetSet
-    if displayInfo then
-        if displayInfo.overrideAtlas then atlas = displayInfo.overrideAtlas end
-        if displayInfo.hideDescription then description = nil end
-        if displayInfo.overrideTooltipWidgetSetID then
-            widgetSet = displayInfo.overrideTooltipWidgetSetID
-        end
+    -- Cache successful name resolutions so a different alt (or a later
+    -- session on the same alt) can show the proper name even when the API
+    -- starts returning nil for the same POI.
+    if info and info.name and ns.db then
+        ns.db.eventNameCache = ns.db.eventNameCache or {}
+        ns.db.eventNameCache[areaPoiID] = info.name
     end
 
-    local isTimed = (C_AreaPoiInfo.IsAreaPOITimed
-                     and C_AreaPoiInfo.IsAreaPOITimed(areaPoiID)) or false
-    local secondsLeft
-    if isTimed and C_AreaPoiInfo.GetAreaPOISecondsLeft then
-        secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(areaPoiID)
+    -- Name resolution chain: live → account-wide cache → "Event in <zone>".
+    local name = info and info.name
+    if not name and ns.db and ns.db.eventNameCache then
+        name = ns.db.eventNameCache[areaPoiID]
     end
-
-    local zone = info.zoneName
+    local zone = info and info.zoneName
     if not zone and C_EventScheduler and C_EventScheduler.GetEventZoneName then
         zone = C_EventScheduler.GetEventZoneName(areaPoiID)
     end
+    if not name and zone then name = "Event in " .. zone end
+
+    local atlas       = info and info.atlasName
+    local description = info and info.description
+    local widgetSet   = info and info.tooltipWidgetSet
+    if displayInfo then
+        if displayInfo.overrideAtlas              then atlas       = displayInfo.overrideAtlas end
+        if displayInfo.hideDescription            then description = nil end
+        if displayInfo.overrideTooltipWidgetSetID then widgetSet   = displayInfo.overrideTooltipWidgetSetID end
+    end
+
+    local isTimed = (C_AreaPoiInfo and C_AreaPoiInfo.IsAreaPOITimed
+                     and C_AreaPoiInfo.IsAreaPOITimed(areaPoiID)) or false
+    local secondsLeft
+    if isTimed and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOISecondsLeft then
+        secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(areaPoiID)
+    end
+
+    if not (name or atlas or zone) then return nil end
 
     return {
-        name             = info.name,
+        name             = name,
         atlasName        = atlas,
         zoneName         = zone,
         description      = description,
         tooltipWidgetSet = widgetSet,
         isTimed          = isTimed,
         secondsLeft      = secondsLeft,
-        isLocked         = info.isLocked,
+        isLocked         = info and info.isLocked,
         mapID            = mapID,
     }
 end

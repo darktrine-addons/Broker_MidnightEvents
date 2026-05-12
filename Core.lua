@@ -209,9 +209,12 @@ local function CurrentDailyResetEpoch()
     return nil
 end
 
--- Set of event names that the scheduler API currently knows about — either
--- in the Ongoing list, currently-firing Scheduled, or future Scheduled
--- within the cached window. Drives the "claimed today" detection heuristic.
+-- Set of event names the scheduler API is *currently firing* on this char
+-- (Ongoing list + currently-active Scheduled). Drives the "claimed today"
+-- heuristic — Future firings deliberately excluded: when the player claims
+-- today's Herbalism Grotto, scheduler still returns its future firings (in
+-- 17h, 41h, etc.) but stops including the current firing. The current
+-- firing's name disappearing from this set is exactly the signal we want.
 local function CurrentSchedulerNames()
     local set = {}
     if not ns.Events then return set end
@@ -220,9 +223,6 @@ local function CurrentSchedulerNames()
                         or ev.source == "scheduler-scheduled") then
             set[ev.name] = true
         end
-    end
-    for _, ev in ipairs(ns.Events.GetUpcoming()) do
-        if ev.name then set[ev.name] = true end
     end
     return set
 end
