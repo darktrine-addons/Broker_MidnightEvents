@@ -102,9 +102,12 @@ local function CollectCurrencies()
     return out
 end
 
--- Probe both GetDelvesForMap (if it exists in 12.0) and GetEventsForMap
--- for each Midnight zone so we can see where the bountiful POIs land.
-local DELVE_PROBE_ZONES = {
+-- Probe both GetDelvesForMap and GetEventsForMap for every map we can
+-- discover under the player's current continent. Initial hardcoded list
+-- missed Isle of Quel'Danas (Parhelion Plaza bountiful delve), so the
+-- dynamic walk is the source of truth; the static set below is just a
+-- fallback in case the walk fails.
+local FALLBACK_ZONES = {
     [2395] = "Eversong Woods",
     [2405] = "Voidstorm",
     [2413] = "Harandar",
@@ -112,14 +115,62 @@ local DELVE_PROBE_ZONES = {
     [2393] = "Silvermoon City",
 }
 
+-- Walk up parentMapID chain from the player's current map until we hit a
+-- Continent (or run out of parents). Returns the continent uiMapID, or the
+-- highest ancestor if no Continent type was found.
+local function FindContinentRoot()
+    if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetMapInfo) then return nil end
+    local current = C_Map.GetBestMapForUnit("player")
+    if not current then return nil end
+    local guard = 20
+    while current and guard > 0 do
+        guard = guard - 1
+        local info = C_Map.GetMapInfo(current)
+        if not info then return current end
+        if Enum and Enum.UIMapType and info.mapType == Enum.UIMapType.Continent then
+            return current
+        end
+        if not info.parentMapID or info.parentMapID == 0 then
+            return current
+        end
+        current = info.parentMapID
+    end
+    return current
+end
+
+-- Walk all descendants of a root map. Bounded depth guards against cycles.
+local function WalkMapTree(rootID, into, depth)
+    if not rootID or (depth or 0) > 6 or into[rootID] then return end
+    into[rootID] = true
+    if not (C_Map and C_Map.GetMapChildrenInfo) then return end
+    local children = C_Map.GetMapChildrenInfo(rootID) or {}
+    for _, child in ipairs(children) do
+        WalkMapTree(child.mapID, into, (depth or 0) + 1)
+    end
+end
+
 local function CollectMapPOIs()
     local out = {}
     if not C_AreaPoiInfo then return out end
-    for mapID, zoneLabel in pairs(DELVE_PROBE_ZONES) do
+
+    local toProbe = {}
+    -- 1. Fallback set (always covered).
+    for mapID in pairs(FALLBACK_ZONES) do toProbe[mapID] = true end
+    -- 2. Dynamic walk from continent root.
+    local continent = FindContinentRoot()
+    if continent then WalkMapTree(continent, toProbe, 0) end
+    -- 3. Always include the player's current map even if the walk skipped it.
+    local current = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+    if current then toProbe[current] = true end
+
+    for mapID in pairs(toProbe) do
+        local mapInfo = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID) or nil
         local entry = {
             mapID     = mapID,
-            zoneLabel = zoneLabel,
-            delves    = nil,    -- nil = API absent; {} = API present, empty result
+            mapName   = mapInfo and mapInfo.name or FALLBACK_ZONES[mapID],
+            mapType   = mapInfo and mapInfo.mapType,
+            parentMapID = mapInfo and mapInfo.parentMapID,
+            delves    = nil,
             events    = nil,
         }
         if C_AreaPoiInfo.GetDelvesForMap then
@@ -138,7 +189,10 @@ local function CollectMapPOIs()
                 entry.events[#entry.events + 1] = info and CopyTable(info) or { areaPoiID = poiID, _missing = true }
             end
         end
-        out[#out + 1] = entry
+        -- Drop maps with neither delves nor events to keep the snapshot lean.
+        if (entry.delves and #entry.delves > 0) or (entry.events and #entry.events > 0) then
+            out[#out + 1] = entry
+        end
     end
     return out
 end

@@ -28,9 +28,13 @@ Our differentiation is **form factor (LDB-bar) + scope (event-tied weeklies) + a
   - Legends of the Haranir (89268, warband scenario)
   - Lady Liadrin's Weekly Choice (pool of 7 known "Midnight: …" quests; one chosen per char per week)
   - Bountiful Delve weekly (paired with the Bountiful Delve daily POI)
-- **Bountiful Delves** — daily-rotating bountiful Delve POIs *(stretch feature; not in `C_EventScheduler` — needs separate `C_AreaPoiInfo.GetDelvesForMap`-style scan; per-alt completion roll-up is a complex value-add)*
-- **Currency display** — narrow to **Shards of Dundun** *only* (and only if its reload mechanic is worth surfacing — see open question). Shards count *down* as the player spends them on Abundance reward runs (8 budget per week). Field Accolades and Latent Arcana are dropped — Blizzard's Events panel shows their cap inline already.
+- **Bountiful Delves** *(Tier 2.5)* — daily-rotating bountiful Delve POIs surfaced via `C_AreaPoiInfo.GetDelvesForMap` (per-zone) and filtered by `atlasName = "delves-bountiful"`. Use `isPrimaryMapForPOI` to dedupe across zones (Atal'Aman appears on both Eversong and Zul'Aman, etc.). Per-Delve completion roll-up across alts is the value-add. Quest IDs for completion tracking still need a harvest pass.
 - **Alts roll-up** — passive snapshot of each character's weekly state on login; tooltip shows aggregate progress, Shift-Right-Click opens a scrollable detail panel.
+
+**Dropped from earlier scope (May 2026 probe findings):**
+- **Shards of Dundun row** — currency 3376 has `rechargingCycleDurationMS=0`, no timed reload. Pure weekly-reset budget; Blizzard's inline "6/8" on the Abundance event tooltip is sufficient.
+- **Slayer's Rise as a separate event** — not surfaced by `C_EventScheduler` or `GetEventsForMap`. Likely a sub-state/wave inside the continuous Stormarion Assault event, surfacing via widgets when active (widget set 1795 was empty between waves at probe time).
+- **Field Accolades / Latent Arcana / generic currency display** — Blizzard's panel covers them inline; we don't duplicate.
 
 **Out of scope (cede to Midnight Routine):**
 - Voidforge questline · Silvermoon Weekly Dungeon · T11 Delve weekly · Mythic+ weekly best · Great Vault detail rows · Patron Orders / Profession Knowledge · Vaeli Housing Weekly · Ritual Sites · Decor Duels · A Call to Battle / Aethas Sunreaver weekly slot (rotates with Timewalking; not event-tied)
@@ -78,12 +82,16 @@ end
 | Legends of the Haranir | ongoing | `isTimed=false` — continuously ongoing. |
 | Abundance (Skinning Den / Enchanting Crypt / Herbalism Grotto) | scheduled (10 entries) | 8 h cadence, rotating across Zul'Aman / Eversong / Harandar. Each entry has exact `startTime`/`endTime`. |
 | Void Assaults | scheduled (1 entry) | `duration=604800` (7 days) — the entry **is** the week-long active-zone indicator. Active zone resolves from the entry's POI info (`_poi.zoneName`). |
-| Slayer's Rise | **not surfaced** | Neither ongoing nor scheduled in the probe. May surface via a sub-widget, may be down this reset window, or may be filtered from the API. Open question. |
-| Bountiful Delves | **not surfaced** | Not in `C_EventScheduler`; visible on world map as a separate POI category. Handled by the Bountiful Delves module instead. |
+| Prey | **map-only** | Surfaces on Silvermoon's map via `C_AreaPoiInfo.GetEventsForMap` (areaPoiID 8742, atlas `UI-EventPoi-PreyCrystal`, widget set 2072). NOT in `C_EventScheduler`. To show "Prey ongoing" we merge the scheduler results with a per-zone `GetEventsForMap` scan. |
+| Slayer's Rise | **likely a Stormarion sub-wave** | Neither ongoing nor scheduled, no separate POI. Widget set 1795 (Stormarion) was empty at probe time, consistent with a wave-only surface. Treat as part of Stormarion Assault; revisit if a future probe during an active wave reveals a separate POI. |
+| Bountiful Delves | **map-only, separate POI category** | `C_AreaPoiInfo.GetDelvesForMap(mapID)` returns delves; filter by `atlasName = "delves-bountiful"`. Handled by the Bountiful Delves module. |
+| Impending Void Incursion | **map-only, currently locked** | Surfaces on multiple zone maps with `isLocked=true`, atlas `ui-eventpoi-majorattacks`. Out of scope until it unlocks; flagged here for future awareness. |
 
 **Per-event details available** — `_poi` blob carries `name`, `atlasName`, `zoneName`, `description`, `tooltipWidgetSet`, `isTimed`, `secondsLeft` (when timed). The `tooltipWidgetSet` ID exposes Blizzard's rich tooltip data (currency progress lines, wave counters) via `C_UIWidgetManager.GetAllWidgetsBySetID(setID)` if needed — useful for surfacing "Shards 6/8" in our tooltip.
 
-**No `ns.fixedCadence`, no zone-list scan** — both are deleted under this design. `EVENT_SCHEDULER_UPDATE` replaces `AREA_POIS_UPDATED` as the refresh hook.
+**No `ns.fixedCadence`, no zone-list scan for scheduled events** — both deleted. `EVENT_SCHEDULER_UPDATE` is the primary refresh hook. For continuous map-only POIs (Prey), supplement with a lightweight `GetEventsForMap` pass over the discovered Midnight zones on `AREA_POIS_UPDATED`.
+
+**Dynamic zone discovery**: walk up via `C_Map.GetMapInfo(...).parentMapID` from the player's current map to the Continent ancestor, then down via `C_Map.GetMapChildrenInfo`. Static zone lists are fragile — the first probe pass missed Isle of Quel'Danas (which carries the Parhelion Plaza bountiful delve). Use a fallback set only if the walk fails.
 
 ### Weekly checklist
 
@@ -110,30 +118,36 @@ f:RegisterEvent("QUEST_REMOVED")           -- handles drops + Liadrin choice loc
 
 **Weekly reset detection** — compare `C_DateAndTime.GetSecondsUntilWeeklyReset()` against a stored `lastResetEpoch`. When reset has occurred, wipe the weekly completion cache.
 
-### Bountiful Delves *(stretch feature)*
+### Bountiful Delves *(Tier 2.5 — ships after events surface + weeklies)*
 
-Bountiful Delves are a separate POI category not surfaced by `C_EventScheduler`. They appear on the world map as a small set of daily-rotating Delve markers. The proposed feature:
+Bountiful Delves are a separate POI category not surfaced by `C_EventScheduler`. They appear on the world map as a daily-rotating set of Delve markers. The feature:
 
-- **Active list** in the tooltip: which Delves are bountiful right now (name + zone + icon).
+- **Active list** in the tooltip: which Delves are bountiful right now (name + zone + icon), pulled from `C_AreaPoiInfo.GetDelvesForMap` filtered by `atlasName = "delves-bountiful"`.
 - **Per-char completion**: has *this* character cleared the active bountiful set today?
 - **Alt roll-up**: which alts haven't cleared yet, for cross-char prioritisation.
 
-**Implementation complexity is the reason this is a stretch goal**:
+**API resolved (2026-05-12 probe)**:
 
-1. **POI discovery**: scan `C_AreaPoiInfo.GetDelvesForMap(uiMapID)` (or `GetEventsForMap` with delve filter — TBD which API the world map uses) across the four Midnight zone uiMapIDs. Then filter for the bountiful atlas/category.
-2. **Per-Delve completion tracking**: needs a per-Delve kill-credit quest ID. None are harvested yet — requires a dedicated harvest pass on a char who has cleared a bountiful Delve, observing `QUEST_TURNED_IN`.
-3. **Daily reset detection**: distinct from weekly reset; `GetQuestResetTime()` gives daily.
-4. **Alt aggregation**: per-char `bountifulDelvesDone[delveID]` set, compared against today's active list at render time.
+```lua
+-- For each Midnight zone uiMapID (discover dynamically — see "Dynamic zone discovery" above):
+local ids = C_AreaPoiInfo.GetDelvesForMap(mapID) or {}
+for _, poiID in ipairs(ids) do
+    local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+    if info and info.atlasName == "delves-bountiful" and info.isPrimaryMapForPOI then
+        -- info.name, info.areaPoiID, info.tooltipWidgetSet, info.iconWidgetSet
+    end
+end
+```
 
-Ship Tier 2 weeklies + events surface first; revisit Bountiful Delves once we have a harvest pass on Delve completion IDs.
+`isPrimaryMapForPOI` dedupes Delves that show on multiple zone maps (Atal'Aman appears on both Eversong and Zul'Aman). Probe found 3 distinct bountifuls across 4 of 5 probed zones (Quel'Danas pending in the next probe pass).
 
-### Currency display
+**Per-Delve completion tracking still needs a harvest pass**: clear a bountiful Delve on a probed char, observe the `QUEST_TURNED_IN` event for the kill-credit quest ID. Without these IDs we can show the active list but not completion state.
 
-**Drop Field Accolades and Latent Arcana entirely** — Blizzard's Events panel shows their cap inline in the per-event tooltip. We don't add value by duplicating.
+**Daily reset**: `GetQuestResetTime()` returns daily. Bountiful rotation appears to happen at daily reset (verify in next harvest cycle).
 
-**Shards of Dundun is special**: it's a *countdown budget* (8 per week, decremented by Abundance reward claims), not an earning bucket. If we determine the reload mechanic (timed? per-Abundance? weekly only?) is worth surfacing — e.g. "Shards: 6/8 · next at 18:00" — we keep a single Shards line in the tooltip. Otherwise drop.
+**Alt aggregation**: per-char `bountifulDone[delveID]` map (storing the daily-reset epoch when cleared), compared against today's active POI list at render time.
 
-**Open research**: is there a timed shard-reload, or do Shards only reset on weekly reset? Probe via `C_CurrencyInfo.GetCurrencyInfo(shardsID)` — fields like `quantityEarnedThisWeek` / `maxQuantityPerWeek` / additional reload-timer fields would clarify. Currency ID still TBD.
+Sequenced after Tier 2 (weeklies) because the per-Delve quest IDs are not yet harvested. Discovery API is solved.
 
 ### Alts roll-up
 
@@ -221,7 +235,6 @@ Refresh cadence:
 │  Legends of the Haranir         (warband)       │
 │  Liadrin Weekly    (Delves picked)        ✓     │
 │  Bountiful Delve weekly                   ✓     │
-│  Shards of Dundun                       6/8     │  (only if reload research adds value)
 ├─ Alts (12 tracked, 8 active this reset) ────────┤
 │  Prey hunts:    5/12 done                       │
 │  World Boss:    7/12 done                       │
@@ -253,8 +266,7 @@ Broker_MidnightEventsDB = {
     enabledRows      = { prey = true, bosses = true, soiree = true,
                          stormarion = true, haranir = true,
                          liadrin = true,
-                         bountifulDelve = true,
-                         shards = false },           -- off by default; opt-in if useful
+                         bountifulDelve = true },
     -- collapse state per section
     sectionState     = { now = "expanded", upcoming = "expanded",
                          delves = "collapsed", weekly = "expanded",
@@ -301,7 +313,6 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 - **Weekly Checklist**
    - Per-row toggle: Prey, Bosses, Soiree, Stormarion, Haranir, Liadrin, Bountiful Delve
    - Prey: sub-toggles per tier (Normal / Hard / Nightmare)
-   - Shards of Dundun row: toggle (off by default)
 
 - **Alts**
    - Roll-up summary in tooltip: on / off
@@ -337,13 +348,15 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 | Bulk completion history | `C_QuestLog.GetAllCompletedQuestIDs()` | For login bulk init |
 | Weekly reset countdown | `C_DateAndTime.GetSecondsUntilWeeklyReset()` | Compare against stored `lastResetEpoch` |
 
-### Bountiful Delves *(stretch — API still to verify)*
-| Need | Candidate API | Notes |
+### Bountiful Delves *(API confirmed; completion IDs pending)*
+| Need | API | Notes |
 |---|---|---|
-| Active Delve POIs in a zone | `C_AreaPoiInfo.GetDelvesForMap(uiMapID)` | Speculative — confirm via probe |
-| Bountiful filter | atlas-name match on resolved POI info | Likely `UI-EventPoi-bountifuldelve` or similar |
+| Active Delve POIs in a zone | `C_AreaPoiInfo.GetDelvesForMap(uiMapID)` | Confirmed via probe |
+| Bountiful filter | `info.atlasName == "delves-bountiful"` | Other atlases: `delves-regular`, etc. |
+| Cross-zone dedupe | `info.isPrimaryMapForPOI` | True only on the canonical map for the POI |
 | Daily reset | `GetQuestResetTime()` | Daily-reset only |
-| Per-Delve completion | `IsQuestFlaggedCompleted(delveQuestID)` | Per-Delve kill-credit IDs to be harvested |
+| Per-Delve completion | `IsQuestFlaggedCompleted(delveQuestID)` | Per-Delve kill-credit IDs harvest pending |
+| Dynamic zone discovery | `C_Map.GetMapInfo` + `GetMapChildrenInfo` from continent ancestor | Avoids missing zones (e.g. Quel'Danas) that a static list might skip |
 
 ### Out
 - `C_AreaPoiInfo.GetEventsForMap` + zone-list scanning — replaced by `C_EventScheduler`.
@@ -353,16 +366,15 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 
 ## Build Sequence
 
-1. **Events surface** — `C_EventScheduler` subscriber, ongoing + scheduled cache, click-hook into `OpenMapToEventPoi`. Validates the API end-to-end and gives an immediately useful tooltip.
+1. **Events surface** — `C_EventScheduler` subscriber for ongoing + scheduled, plus a supplementary `C_AreaPoiInfo.GetEventsForMap` scan over dynamically-discovered Midnight zones (Prey is map-only; the merge handles it). Click-hook into `OpenMapToEventPoi`.
 2. **Broker text** — `N/M weeklies done · NextEvent` formatter wired to both the events cache and the weekly checklist state.
-3. **Weekly checklist (current)** — render existing `ns.weeklies` rows in the new tooltip section.
+3. **Weekly checklist** — render existing `ns.weeklies` rows in the new tooltip section.
 4. **Multi-questID slot support** — Core change: accept `{ questIDs = {…} }` alongside single `questID`. Promote Liadrin pool + Void Assault zone pair out of `ns.candidateWeeklies`.
 5. **Alts Mode 1** — roll-up summary in tooltip.
 6. **Alts Mode 2** — detail panel frame.
 7. **Settings panel** — simplified hierarchy.
-8. **Bountiful Delves *(stretch)*** — POI scan + per-Delve completion + tooltip section + alts column.
-9. **Shards of Dundun row *(opt-in)*** — only if reload research surfaces a useful display.
-10. **Minimap button + LibDBIcon registration** — already in scaffold.
+8. **Bountiful Delves *(Tier 2.5)*** — POI scan via `GetDelvesForMap` + atlas filter + dedupe + tooltip section. Per-Delve completion + alts column gated on harvest of per-Delve quest IDs (Q21).
+9. **Minimap button + LibDBIcon registration** — already in scaffold.
 
 ## Open Questions for Resolution
 
@@ -376,18 +388,21 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 | 12 | **Soiree direct weekly** | "Fortify the Runestones" quest ID still TBD. 93889 is the Liadrin-pool variant, not this. |
 | 13 | **Bountiful Delve weekly** | Quest ID TBD. |
 | 14 | **Void Assault zone-rotation pool** | Confirmed 94385 (Eversong) + 94386 (Zul'Aman). Harandar / Voidstorm variants likely exist; harvest when rotation lands. |
-| 15 | **`rewardsClaimed` semantic** *(API)* | Both probe chars at 0 events/0 rewards → all `false`. Need a positive-control char (some events done this week) to verify whether it tracks weekly cap or per-instance claim. If it tracks cap, we get a native completion signal for some weeklies. |
-| 16 | **Slayer's Rise absence** *(API)* | Not in `C_EventScheduler` probe. Either filtered out, surfaced via a sub-widget on Stormarion's tooltipWidgetSet (1795), or down this reset. Re-probe next reset and inspect the Stormarion widget set. |
-| 17 | **Shards of Dundun reload mechanic** *(currency)* | Shards count down as the player spends them; whether reload is timed, per-event, or weekly-reset-only is unknown. Probe `C_CurrencyInfo.GetCurrencyInfo(<shardsID>)` for relevant fields; Shards row scope depends on the answer. Currency ID itself still TBD. |
-| 18 | **Bountiful Delve POI API + completion IDs** *(stretch)* | Confirm `C_AreaPoiInfo.GetDelvesForMap` returns bountiful markers; harvest per-Delve kill-credit quest IDs by clearing a bountiful on a probed char. |
-| 19 | **Field Accolades / Latent Arcana currency IDs** | **Dropped from scope** — Blizzard shows these inline; we don't duplicate. |
+| 15 | **`rewardsClaimed` semantic** *(API)* | Both probe chars at 0 events/0 rewards → all `false`. Need a positive-control char (some events done this week) to verify whether it tracks weekly cap or per-instance claim. Not blocking. |
+| 16 | ~~Slayer's Rise absence~~ *(API)* | **Resolved (2026-05-12 probe):** not surfaced by `C_EventScheduler` or `GetEventsForMap`; widget set 1795 (Stormarion) was empty at probe time. Treat as a Stormarion Assault sub-wave, not a separate slot. Revisit if a future probe during an active wave reveals a separate POI. |
+| 17 | ~~Shards of Dundun reload mechanic~~ *(currency)* | **Resolved (2026-05-12 probe):** currencyID **3376**, `maxQuantity=8`, `rechargingCycleDurationMS=0`. No timed reload — pure weekly-reset budget. **Shards row dropped from scope.** Blizzard's inline "6/8" on the Abundance event tooltip is sufficient. |
+| 18 | ~~Bountiful Delve POI API~~ *(Tier 2.5)* | **Resolved (2026-05-12 probe):** `C_AreaPoiInfo.GetDelvesForMap(mapID)` returns delves; filter by `atlasName = "delves-bountiful"`, dedupe via `isPrimaryMapForPOI`. Per-Delve completion quest IDs still need a harvest pass — see Q21. |
+| 19 | **Currency IDs** | Harvested via probe: Shard of Dundun **3376**, Field Accolade **3405**, Unalloyed Abundance **3377**, Dawnlight Manaflux **3378** (Soiree-related, 5/8 budget, same shape as Shards). Latent Arcana not present on probe char (likely unlocked at Soiree progression). All currently **dropped from scope** — Blizzard shows them inline. |
 | 20 | **World-boss weekly reset behaviour** | The four kill-credit quest IDs (92560 / 92123 / 92034 / 92636) reset weekly *(assumed)*; verify at next reset. If they're achievement-style we need a different approach. |
+| 21 | **Per-Bountiful-Delve completion quest IDs** *(Tier 2.5)* | Harvest pending — clear a bountiful on a probed char, observe `QUEST_TURNED_IN`. 3 distinct bountifuls seen this rotation (Grudge Pit, Sunkiller Sanctum, Atal'Aman); Parhelion Plaza on Quel'Danas confirmed visually as a 4th. |
+| 22 | **Prey POI integration** *(events surface)* | Prey is a continuous event POI on the Silvermoon map (areaPoiID 8742) but is **not** in `C_EventScheduler`. To show "Prey ongoing" we merge scheduler results with a per-zone `GetEventsForMap` scan. Cheap; just a code-pattern note for the events module. |
 
 ## General Risks
 
 - **Quest IDs are patch-fragile.** Each minor patch can shift quest IDs. Maintain `ns.weeklies` (and any Bountiful Delve table) in `Data.lua` and treat patch days as a re-harvest trigger.
 - **`C_EventScheduler` data lag.** `RequestEvents()` is server-throttled; on a fresh login, expect a brief window where `HasData()` returns false. Gate reads on `HasData()` and refresh on `EVENT_SCHEDULER_UPDATE`. Don't show stale countdowns.
 - **`continent` field unreliable.** Probe showed `GetActiveContinentName()` returning "Khaz Algar" while events were Midnight ones. Don't use it for expansion detection — rely on the per-event `mapID`.
-- **Slayer's Rise / Bountiful Delves missing from `C_EventScheduler`.** Each may surface via different APIs. Keep them as optional sections that no-op gracefully when their source returns nothing.
+- **Slayer's Rise / Bountiful Delves / Prey missing from `C_EventScheduler`.** Each surfaces via `C_AreaPoiInfo` (`GetDelvesForMap` for delves, `GetEventsForMap` for Prey, sub-widget of Stormarion for Slayer's Rise). Keep them as optional sections that no-op gracefully when their source returns nothing.
+- **Static zone lists are fragile.** The initial probe missed Isle of Quel'Danas (Parhelion Plaza bountiful delve). Discover Midnight zones dynamically via `C_Map.GetMapInfo` + `GetMapChildrenInfo` from the continent ancestor; treat any hardcoded zone list as a fallback only.
 - **Multi-questID slot Core change** is small but a regression risk for existing single-`questID` rows — keep the Core read backwards-compatible.
 - **Bountiful Delves complexity creep** — the per-alt completion roll-up is the value-add, but it's the part with the most moving parts (POI discovery + quest harvest + daily reset + alt aggregation). Ship the other tiers first; revisit only when their foundation is solid.
