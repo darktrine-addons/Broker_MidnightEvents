@@ -5,9 +5,18 @@
 
 local addonName, ns = ...
 
+-- Default visibility flags. enabledSections mirrors the tooltip's top-level
+-- section list one-for-one. showWorldBosses gates the World Boss row inside
+-- the "weekly" section (kept as a separate flag so disabling it doesn't hide
+-- the whole section).
 local defaults = {
-    showWorldBosses = true,    -- show World Bosses row in This Week section
-    showAltSummary  = true,    -- show Alts roll-up section
+    enabledSections = {
+        now      = true,
+        upcoming = true,
+        weekly   = true,
+        alts     = true,
+    },
+    showWorldBosses = true,
 }
 
 -- Returns the epoch (seconds) of the most recent weekly reset, or nil if the
@@ -44,8 +53,21 @@ sf:SetScript("OnEvent", function(self, event, name)
     db.events      = nil
     db.hideDistant = nil
 
+    -- Phase 6 migration: consolidate section visibility under enabledSections.
+    -- The legacy showAltSummary flag becomes enabledSections.alts; new flags
+    -- (now, upcoming, weekly) default to true on first load.
+    db.enabledSections = db.enabledSections or {}
+    if db.showAltSummary ~= nil then
+        if db.enabledSections.alts == nil then
+            db.enabledSections.alts = db.showAltSummary
+        end
+        db.showAltSummary = nil
+    end
+    for k, v in pairs(defaults.enabledSections) do
+        if db.enabledSections[k] == nil then db.enabledSections[k] = v end
+    end
+
     if db.showWorldBosses == nil then db.showWorldBosses = defaults.showWorldBosses end
-    if db.showAltSummary  == nil then db.showAltSummary  = defaults.showAltSummary  end
     ns.db = db
 
     -- Per-character bootstrap. Key is "Realm/Name" so connected realms with
@@ -79,30 +101,37 @@ sf:SetScript("OnEvent", function(self, event, name)
 
     local category = Settings.RegisterVerticalLayoutCategory("Broker: MidnightEvents")
 
-    -- Section: This Week
+    -- Section: Tooltip Sections (mirror of the tooltip's top-level hierarchy)
     Settings.RegisterInitializer(category,
-        CreateSettingsListSectionHeaderInitializer("This Week", nil))
+        CreateSettingsListSectionHeaderInitializer("Tooltip Sections", nil))
+
+    local sectionOptions = {
+        { key = "now",      label = "Now",                       desc = "Show currently-firing events (Stormarion, Legends, ongoing Abundance, etc.)." },
+        { key = "upcoming", label = "Upcoming (next 24h)",       desc = "Show scheduled events firing within the next 24 hours." },
+        { key = "weekly",   label = "This Week",                 desc = "Show the per-character weekly checklist (World Bosses + tracked weekly quests)." },
+        { key = "alts",     label = "Alts roll-up",              desc = "Aggregate weekly progress across every character you've logged into with this addon enabled. Hidden when only the active character is tracked." },
+    }
+    for _, opt in ipairs(sectionOptions) do
+        local setting = Settings.RegisterAddOnSetting(
+            category, addonName .. "_section_" .. opt.key,
+            opt.key, db.enabledSections,
+            Settings.VarType.Boolean, opt.label,
+            defaults.enabledSections[opt.key])
+        setting:SetValueChangedCallback(RefreshUI)
+        Settings.CreateCheckbox(category, setting, opt.desc)
+    end
+
+    -- Section: This Week rows
+    Settings.RegisterInitializer(category,
+        CreateSettingsListSectionHeaderInitializer("This Week rows", nil))
 
     local wbSetting = Settings.RegisterAddOnSetting(
         category, addonName .. "_showWorldBosses", "showWorldBosses", db,
-        Settings.VarType.Boolean, "Show World Bosses row",
+        Settings.VarType.Boolean, "World Bosses",
         defaults.showWorldBosses)
     wbSetting:SetValueChangedCallback(RefreshUI)
     Settings.CreateCheckbox(category, wbSetting,
-        "Display the world boss kill list in the This Week section.")
-
-    -- Section: Alts
-    Settings.RegisterInitializer(category,
-        CreateSettingsListSectionHeaderInitializer("Alts", nil))
-
-    local altSetting = Settings.RegisterAddOnSetting(
-        category, addonName .. "_showAltSummary", "showAltSummary", db,
-        Settings.VarType.Boolean, "Show Alts roll-up",
-        defaults.showAltSummary)
-    altSetting:SetValueChangedCallback(RefreshUI)
-    Settings.CreateCheckbox(category, altSetting,
-        "Aggregate weekly progress across every character you've logged into "
-        .. "with this addon enabled. Hidden when only the active character is tracked.")
+        "Display the World Bosses row inside the This Week section.")
 
     Settings.RegisterAddOnCategory(category)
     ns.settingsCategoryID = category:GetID()

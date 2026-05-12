@@ -227,18 +227,28 @@ end
 
 -- ── tooltip ───────────────────────────────────────────────────────────────────
 
+-- Per-section visibility. Defaults to true before db.enabledSections is
+-- populated (rare race window between addon load and BuildTooltip).
+local function SectionEnabled(key)
+    local s = ns.db and ns.db.enabledSections
+    if not s then return true end
+    return s[key] ~= false
+end
+
 local function BuildTooltip()
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
-    -- ── Section 1: Now ────────────────────────────────────────────────────────
+    local now = time()
+
+    -- ── Section: Now ──────────────────────────────────────────────────────────
     -- Events currently firing (scheduler ongoing + currently-active scheduled
     -- + continuous map-event POIs). Order: insertion order from ns.Events,
     -- which puts scheduler entries before map-event entries.
+    if SectionEnabled("now") then
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Now", CL_r, CL_g, CL_b)
 
-    local now    = time()
     local active = ns.Events and ns.Events.GetActive() or {}
     if #active == 0 then
         GameTooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
@@ -266,11 +276,13 @@ local function BuildTooltip()
             GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
     end
+    end  -- SectionEnabled("now")
 
-    -- ── Section 2: Upcoming (next 24h) ────────────────────────────────────────
+    -- ── Section: Upcoming (next 24h) ──────────────────────────────────────────
     -- Scheduler-fed list of future event firings within the next day. Already
     -- sorted by startTime ascending in ns.Events. Section is suppressed when
     -- empty so the tooltip doesn't grow a stub header for nothing.
+    if SectionEnabled("upcoming") then
     local upcoming = ns.Events and ns.Events.GetUpcoming(24 * 3600) or {}
     if #upcoming > 0 then
         GameTooltip:AddLine(" ")
@@ -291,8 +303,9 @@ local function BuildTooltip()
             GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
     end
+    end  -- SectionEnabled("upcoming")
 
-    -- ── Section 2: This Week (CharName) ───────────────────────────────────────
+    -- ── Section: This Week (CharName) ─────────────────────────────────────────
     -- Outstanding rows render at the top in white with an orange ✗ icon (or
     -- green 'available' for the world boss, where we want a positive prompt
     -- to check the map rather than a nag). Done rows fall to the bottom in
@@ -300,7 +313,7 @@ local function BuildTooltip()
     -- 'X/Y done' summary so the player knows the status without scanning.
     local showWB = not ns.db or ns.db.showWorldBosses ~= false
     local hasWeeklies = ns.weeklies and #ns.weeklies > 0
-    if showWB or hasWeeklies then
+    if SectionEnabled("weekly") and (showWB or hasWeeklies) then
         local CHECK = "|A:common-icon-checkmark:14:14|a"
         local CROSS = "|A:common-icon-redx:14:14|a"
 
@@ -376,15 +389,14 @@ local function BuildTooltip()
         end
     end
 
-    -- ── Section 3: Alts (roll-up summary) ────────────────────────────────────
+    -- ── Section: Alts (roll-up summary) ──────────────────────────────────────
     -- Aggregates per-activity completion across every tracked character that
     -- has logged in since the most recent weekly reset. Stale-data characters
     -- (no login since reset) are excluded from both the active count and the
     -- per-activity denominators, so progress reflects only fresh observations.
     -- Hidden entirely when the user is the only tracked char.
-    local showAlts = not ns.db or ns.db.showAltSummary ~= false
     local currentReset = ns.char and ns.char.weeklyReset or 0
-    if showAlts and ns.db and ns.db.chars and currentReset > 0 then
+    if SectionEnabled("alts") and ns.db and ns.db.chars and currentReset > 0 then
         local trackedCount, activeCount = 0, 0
         local wbDoneCount = 0
         local weeklyDoneCount = {}            -- weekly key → completion count
