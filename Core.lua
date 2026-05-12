@@ -69,6 +69,25 @@ end
 -- legacy raid-lockout system. We poll IsQuestFlaggedCompleted on PEW and on
 -- quest events to keep ns.char.weeklies and ns.char.worldBoss fresh.
 
+-- Resolves a single ns.weeklies row to a boolean completion state. Supports
+-- two row shapes:
+--   { questID = N }       — single quest; row done iff N is flagged complete
+--   { questIDs = {a, b…} } — pool/rotation slot; row done iff any pool
+--                            member is flagged complete (suits Lady Liadrin's
+--                            choose-N-of-pool umbrella and the Void Assault
+--                            zone rotation pair)
+local function IsWeeklySlotDone(w)
+    if w.questID then
+        return C_QuestLog.IsQuestFlaggedCompleted(w.questID) or false
+    end
+    if w.questIDs then
+        for _, qid in ipairs(w.questIDs) do
+            if C_QuestLog.IsQuestFlaggedCompleted(qid) then return true end
+        end
+    end
+    return false
+end
+
 local function RefreshWeeklies()
     if not ns.char or not C_QuestLog or not C_QuestLog.IsQuestFlaggedCompleted then
         return
@@ -77,7 +96,7 @@ local function RefreshWeeklies()
     -- Per-row binary weeklies.
     ns.char.weeklies = ns.char.weeklies or {}
     for _, w in ipairs(ns.weeklies or {}) do
-        ns.char.weeklies[w.key] = C_QuestLog.IsQuestFlaggedCompleted(w.questID) or false
+        ns.char.weeklies[w.key] = IsWeeklySlotDone(w)
     end
 
     -- World boss: per-boss credit IDs are the source of truth. The earlier
