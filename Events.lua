@@ -140,6 +140,17 @@ local function BuildSchedulerEntry(ev, poi, source)
 end
 
 local function BuildMapEntry(poiID, info)
+    -- Query timing live for map-event POIs. Many of these are actually
+    -- timed (Abundance events whose scheduler entry got filtered out for
+    -- this char post-reward-claim — the POI stays visible on the map and
+    -- still ticks down its remaining-window timer). Without this, every
+    -- map-only event renders as untimed "active" grey.
+    local isTimed = (C_AreaPoiInfo.IsAreaPOITimed
+                     and C_AreaPoiInfo.IsAreaPOITimed(poiID)) or false
+    local secondsLeft
+    if isTimed and C_AreaPoiInfo.GetAreaPOISecondsLeft then
+        secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
+    end
     return {
         source           = "map-event",
         areaPoiID        = poiID,
@@ -148,7 +159,8 @@ local function BuildMapEntry(poiID, info)
         zoneName         = info.zoneName,
         description      = info.description,
         tooltipWidgetSet = info.tooltipWidgetSet,
-        isTimed          = false,
+        isTimed          = isTimed,
+        secondsLeft      = secondsLeft,
         isLocked         = info.isLocked,
     }
 end
