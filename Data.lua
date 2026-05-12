@@ -64,6 +64,25 @@ ns.weeklies = {
     { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "Haran" },
 }
 
+-- Last-resort POI name lookup. C_AreaPoiInfo.GetAreaPOIInfo returns nil
+-- for several scheduler-only POI IDs (Abundance variants) regardless of
+-- which mapID we pass and regardless of where the player is standing —
+-- they don't appear in any zone's GetEventsForMap, so WarmZonePois can't
+-- populate the cache for them either. Blizzard's own events panel knows
+-- the names; we don't have access to whatever internal path it uses.
+--
+-- This hardcoded table is the fallback after live API and account-wide
+-- name cache both fail. Brittle to patch updates — re-verify on new
+-- content patches if the events panel starts showing different names.
+ns.knownEventNames = {
+    [8419] = "Stormarion Assault",
+    [8423] = "Legends of the Haranir",
+    [8525] = "Abundance: Skinning Den",       -- Zul'Aman
+    [8527] = "Abundance: Herbalism Grotto",   -- Harandar
+    [8528] = "Abundance: Enchanting Crypt",   -- Eversong Woods
+    [8697] = "Void Assaults",
+}
+
 -- Lady Liadrin pool member → human-friendly short label. Used by the
 -- tooltip to annotate the Liadrin row with which choice the current char
 -- picked this week (e.g. "Lady Liadrin's Weekly (Delves picked)").

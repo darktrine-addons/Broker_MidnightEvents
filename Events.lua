@@ -102,10 +102,18 @@ local function ResolvePoi(areaPoiID, displayInfo)
         ns.db.eventNameCache[areaPoiID] = info.name
     end
 
-    -- Name resolution chain: live → account-wide cache → "Event in <zone>".
+    -- Name resolution chain:
+    --   1. live API
+    --   2. account-wide cache (populated from any alt's successful live)
+    --   3. ns.knownEventNames (hardcoded for scheduler-only POIs whose
+    --      info GetAreaPOIInfo never returns, regardless of map/location)
+    --   4. "Event in <zone>" via GetEventZoneName
     local name = info and info.name
     if not name and ns.db and ns.db.eventNameCache then
         name = ns.db.eventNameCache[areaPoiID]
+    end
+    if not name and ns.knownEventNames then
+        name = ns.knownEventNames[areaPoiID]
     end
     local zone = info and info.zoneName
     if not zone and C_EventScheduler and C_EventScheduler.GetEventZoneName then
