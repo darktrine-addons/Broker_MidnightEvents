@@ -27,13 +27,6 @@ local function ShortName(name)
     return name and (name:match("^(.-): ") or name) or "Event"
 end
 
--- ── active events ─────────────────────────────────────────────────────────────
--- Rebuilt on AREA_POIS_UPDATED. Each entry:
---   { mapID, poiID, name, atlas, secs, expiresAt, pending }
--- secs / expiresAt are nil for events that aren't timed (zone-week markers).
--- `pending` is true when secs is "time until next firing" (schedule fallback);
--- false/nil when secs is "time until current run ends" (server-pushed).
-local activeEvents = {}
 local tooltipOwner  -- set while our tooltip is being shown; nil otherwise
 
 -- Compact remaining-time formatter: "now", "45s", "23m", "3h 12m", "2d 7h 18m".
@@ -52,97 +45,23 @@ local function FormatRemaining(secs)
     return d .. "d " .. h .. "h " .. m .. "m"
 end
 
--- Live remaining time for a stored event (uses expiresAt to count down without re-scan).
-local function CurrentRemaining(ev)
-    if not ev.expiresAt then return nil end
-    return ev.expiresAt - GetTime()
-end
-
--- After a predicted firing passes, keep showing 'now!' for the grace window,
--- then roll the prediction forward to the next cadence mark. We deliberately
--- don't try to verify against GetAreaPOISecondsLeft — every TWW Theatre
--- Troupe tracker tried that path and abandoned it (the API returns values
--- misaligned with reality for player-action events of this class).
-local function RefreshPendingPredictions()
-    local now   = GetTime()
-    local grace = ns.scheduleGracePeriod or 600
-    for _, ev in ipairs(activeEvents) do
-        if ev.pending and ev.expiresAt
-           and (now - ev.expiresAt) > grace then
-            local newSecs = ns.ScheduleFallbackSecs(ev.name)
-            if newSecs then
-                ev.secs      = newSecs
-                ev.expiresAt = now + newSecs
-            end
-        end
+-- Derive remaining seconds + a state tag for an event entry from ns.Events.
+-- Prefers epoch fields (startTime/endTime) over server-snapshot secondsLeft
+-- so countdowns decrement live between Events refreshes.
+--   "upcoming" — startTime > now; secs = startTime - now
+--   "active"   — currently firing; secs = endTime - now (or secondsLeft fallback)
+--   "ongoing"  — untimed (Stormarion / Legends); secs = nil
+local function EventRemaining(ev, now)
+    if ev.startTime and ev.startTime > now then
+        return ev.startTime - now, "upcoming"
     end
-end
-
--- Visibility filter applied uniformly across broker text and tooltip rendering.
--- Honors per-event toggles and the "hide distant events" master switch.
-local function IsVisible(ev)
-    local db = ns.db
-    if not db then return true end
-    local key = ns.GetEventToggleKey and ns.GetEventToggleKey(ev.name)
-    if key and db.events and db.events[key] == false then
-        return false
+    if ev.endTime and ev.endTime > now then
+        return ev.endTime - now, "active"
     end
-    if db.hideDistant then
-        local rem = CurrentRemaining(ev)
-        if rem and rem > 24 * 3600 then return false end
+    if ev.secondsLeft and ev.secondsLeft > 0 then
+        return ev.secondsLeft, "active"
     end
-    return true
-end
-
--- Scan one map for current-event POIs; append to `out`, dedupe via `seenPOIs`.
-local function ScanMap(mapID, out, seenPOIs)
-    if not mapID then return end
-    local pois = C_AreaPoiInfo.GetEventsForMap(mapID)
-    if not pois then return end
-    for _, poiID in ipairs(pois) do
-        if not seenPOIs[poiID] then
-            local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
-            if info and info.isCurrentEvent then
-                local secs, pending
-                if C_AreaPoiInfo.IsAreaPOITimed(poiID) then
-                    secs = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
-                end
-                if not secs then
-                    secs    = ns.ScheduleFallbackSecs(info.name)
-                    pending = secs ~= nil
-                end
-                local entry = {
-                    mapID   = mapID,
-                    poiID   = poiID,
-                    name    = info.name or "Event",
-                    atlas   = info.atlasName,
-                    secs    = secs,
-                    pending = pending,
-                }
-                if secs then entry.expiresAt = GetTime() + secs end
-                out[#out + 1] = entry
-                seenPOIs[poiID] = true
-            end
-        end
-    end
-end
-
-local function RefreshActiveEvents()
-    wipe(activeEvents)
-    local seen = {}
-    for _, mapID in ipairs(ns.zones) do
-        ScanMap(mapID, activeEvents, seen)
-    end
-    -- Defensive: also scan whatever zone the player is currently in.
-    ScanMap(C_Map.GetBestMapForUnit("player"), activeEvents, seen)
-
-    -- Sort: timed events ascending by remaining seconds, untimed at the bottom.
-    table.sort(activeEvents, function(a, b)
-        local sa = a.secs or math.huge
-        local sb = b.secs or math.huge
-        if sa == sb then return a.name < b.name end
-        return sa < sb
-    end)
+    return nil, "ongoing"
 end
 
 -- ── weekly completion tracking ────────────────────────────────────────────────
@@ -179,34 +98,63 @@ end
 
 -- ── broker text ───────────────────────────────────────────────────────────────
 
-local function UpdateBrokerText()
-    local soonest, soonestRem
-    for _, ev in ipairs(activeEvents) do
-        if IsVisible(ev) then
-            local rem = CurrentRemaining(ev)
-            if rem and (not soonestRem or rem < soonestRem) then
-                soonest, soonestRem = ev, rem
-            end
-        end
-    end
+-- Walk active + upcoming events and pick the row with the smallest non-nil
+-- remaining-seconds. Falls back to the first untimed active event ("ongoing")
+-- when nothing has a countdown.
+local function GetSoonest()
+    if not ns.Events then return nil end
+    local now = time()
+    local soonest, soonestSecs, soonestKind
 
-    if soonest then
-        local short = ShortName(soonest.name)
-        local body, hex
-        if soonestRem and soonestRem <= 0 then
-            body = short .. "  now!"
-            hex  = "ff9919"                       -- orange (now firing)
-        elseif soonest.pending then
-            body = short .. " in " .. FormatRemaining(soonestRem)
-            hex  = soonestRem < 5 * 60 and "ff9919" or "a6bff2"  -- urgent / soft blue
-        else
-            body = short .. "  " .. FormatRemaining(soonestRem) .. " left"
-            hex  = soonestRem < 5 * 60 and "ff9919" or "ffffff"  -- urgent / white
+    for _, ev in ipairs(ns.Events.GetActive()) do
+        local secs, kind = EventRemaining(ev, now)
+        if secs and (not soonestSecs or secs < soonestSecs) then
+            soonest, soonestSecs, soonestKind = ev, secs, kind
         end
-        broker.text = "|cff" .. hex .. body .. "|r"
-    else
-        broker.text = "Midnight Events"
     end
+    for _, ev in ipairs(ns.Events.GetUpcoming(24 * 3600)) do
+        local secs, kind = EventRemaining(ev, now)
+        if secs and (not soonestSecs or secs < soonestSecs) then
+            soonest, soonestSecs, soonestKind = ev, secs, kind
+        end
+    end
+    if not soonest then
+        local active = ns.Events.GetActive()
+        if active[1] then
+            soonest, soonestSecs, soonestKind = active[1], nil, "ongoing"
+        end
+    end
+    return soonest, soonestSecs, soonestKind
+end
+
+local function UpdateBrokerText()
+    if not ns.Events or not ns.Events.HasData() then
+        broker.text = "Midnight Events"
+        return
+    end
+    local ev, secs, kind = GetSoonest()
+    if not ev then
+        broker.text = "Midnight Events"
+        return
+    end
+    local short = ShortName(ev.name)
+    local body, hex
+    if kind == "ongoing" then
+        body = short .. "  ongoing"
+        hex  = "ffffff"
+    elseif kind == "upcoming" then
+        body = short .. " in " .. FormatRemaining(secs)
+        hex  = secs < 5 * 60 and "ff9919" or "a6bff2"  -- urgent / soft blue
+    else  -- "active"
+        if secs and secs <= 0 then
+            body = short .. "  now!"
+            hex  = "ff9919"
+        else
+            body = short .. "  " .. FormatRemaining(secs) .. " left"
+            hex  = (secs and secs < 5 * 60) and "ff9919" or "ffffff"
+        end
+    end
+    broker.text = "|cff" .. hex .. body .. "|r"
 end
 
 -- ── tooltip ───────────────────────────────────────────────────────────────────
@@ -216,41 +164,57 @@ local function BuildTooltip()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
     -- ── Section 1: Timed Events ───────────────────────────────────────────────
+    -- Reads from ns.Events (C_EventScheduler-backed). Combines active +
+    -- upcoming-within-24h into one sorted list (smallest remaining seconds
+    -- first; untimed "ongoing" rows sink to the bottom).
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Timed Events", CL_r, CL_g, CL_b)
 
-    local visible = {}
-    for _, ev in ipairs(activeEvents) do
-        if IsVisible(ev) then visible[#visible + 1] = ev end
+    local now = time()
+    local rows = {}
+    if ns.Events then
+        for _, ev in ipairs(ns.Events.GetActive()) do
+            local secs, kind = EventRemaining(ev, now)
+            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
+        end
+        for _, ev in ipairs(ns.Events.GetUpcoming(24 * 3600)) do
+            local secs, kind = EventRemaining(ev, now)
+            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
+        end
     end
+    table.sort(rows, function(a, b)
+        local sa = a.secs or math.huge
+        local sb = b.secs or math.huge
+        if sa == sb then return (a.ev.name or "") < (b.ev.name or "") end
+        return sa < sb
+    end)
 
-    if #visible == 0 then
+    if #rows == 0 then
         GameTooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        for _, ev in ipairs(visible) do
-            local label = ev.atlas
-                          and ("|A:" .. ev.atlas .. ":16:16|a " .. ev.name)
-                          or  ev.name
+        for _, r in ipairs(rows) do
+            local ev    = r.ev
+            local atlas = ev.atlasName
+            local label = atlas
+                          and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
+                          or  (ev.name or "Event")
 
-            local rem = CurrentRemaining(ev)
             local valueText, vr, vg, vb
-            if not rem then
+            if r.kind == "ongoing" then
                 valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
-            elseif rem <= 0 then
+            elseif r.secs and r.secs <= 0 then
                 valueText, vr, vg, vb = "now!", CH_r, CH_g, CH_b
-            elseif ev.pending then
-                -- Time until the event next starts.
-                valueText = "in " .. FormatRemaining(rem)
-                if rem < 5 * 60 then
-                    vr, vg, vb = CH_r, CH_g, CH_b      -- about to fire
+            elseif r.kind == "upcoming" then
+                valueText = "in " .. FormatRemaining(r.secs)
+                if r.secs < 5 * 60 then
+                    vr, vg, vb = CH_r, CH_g, CH_b
                 else
-                    vr, vg, vb = 0.65, 0.75, 0.95      -- soft blue: future
+                    vr, vg, vb = 0.65, 0.75, 0.95
                 end
             else
-                -- Time until the currently-running event expires.
-                valueText = FormatRemaining(rem) .. " left"
-                if rem < 5 * 60 then
-                    vr, vg, vb = CH_r, CH_g, CH_b      -- about to expire
+                valueText = FormatRemaining(r.secs) .. " left"
+                if r.secs < 5 * 60 then
+                    vr, vg, vb = CH_r, CH_g, CH_b
                 else
                     vr, vg, vb = CV_r, CV_g, CV_b
                 end
@@ -443,35 +407,40 @@ end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
-f:RegisterEvent("AREA_POIS_UPDATED")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("QUEST_REMOVED")
 
 f:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_ENTERING_WORLD" or event == "AREA_POIS_UPDATED" then
-        RefreshActiveEvents()
-        UpdateBrokerText()
-    end
     if event == "PLAYER_ENTERING_WORLD"
        or event == "QUEST_TURNED_IN"
        or event == "QUEST_REMOVED" then
         RefreshWeeklies()
     end
+    UpdateBrokerText()
     if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
         BuildTooltip()
     end
 end)
 
--- 1-second ticker decrements the broker countdown smoothly between server pushes
--- (AREA_POIS_UPDATED can be minutes apart). Tooltip refresh is also driven here
--- whenever it's open, so the "23m" → "22m" step is visible without leaving and
--- re-entering the broker button.
+-- Subscribe to Events module refreshes (server-pushed EVENT_SCHEDULER_UPDATE,
+-- AREA_POIS_UPDATED for continuous map-only POIs, and PEW continent rediscovery).
+if ns.Events and ns.Events.RegisterListener then
+    ns.Events.RegisterListener(function()
+        UpdateBrokerText()
+        if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+            BuildTooltip()
+        end
+    end)
+end
+
+-- 1-second ticker decrements the broker countdown smoothly between Events
+-- refreshes. Uses live startTime/endTime epochs via EventRemaining, so no
+-- internal mutation needed — just re-render.
 local tickerElapsed = 0
 f:SetScript("OnUpdate", function(self, dt)
     tickerElapsed = tickerElapsed + dt
     if tickerElapsed >= 1.0 then
         tickerElapsed = 0
-        RefreshPendingPredictions()
         UpdateBrokerText()
         if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
             BuildTooltip()

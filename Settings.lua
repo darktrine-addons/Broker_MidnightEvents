@@ -6,15 +6,6 @@
 local addonName, ns = ...
 
 local defaults = {
-    -- Per-event visibility (keys come from ns.eventToggles in Data.lua).
-    events = {
-        abundance         = true,
-        stormarionAssault = true,
-        slayersRise       = true,
-        voidAssault       = true,
-        bountifulDelve    = true,
-    },
-    hideDistant     = true,    -- hide events firing more than 24h away
     showWorldBosses = true,    -- show World Bosses row in This Week section
     showAltSummary  = true,    -- show Alts roll-up section
 }
@@ -46,11 +37,13 @@ sf:SetScript("OnEvent", function(self, event, name)
     local db = Broker_MidnightEventsDB
     db.minimapIcon = db.minimapIcon or { hide = false }  -- managed by LibDBIcon
     db.chars       = db.chars       or {}
-    db.events      = db.events      or {}
-    for k, v in pairs(defaults.events) do
-        if db.events[k] == nil then db.events[k] = v end
-    end
-    if db.hideDistant     == nil then db.hideDistant     = defaults.hideDistant     end
+
+    -- Phase 2 migration: per-event toggles and "hide distant" are gone now
+    -- that the Events surface is C_EventScheduler-driven (Blizzard's own
+    -- panel handles filtering). Drop the orphaned SV keys on first load.
+    db.events      = nil
+    db.hideDistant = nil
+
     if db.showWorldBosses == nil then db.showWorldBosses = defaults.showWorldBosses end
     if db.showAltSummary  == nil then db.showAltSummary  = defaults.showAltSummary  end
     ns.db = db
@@ -85,30 +78,6 @@ sf:SetScript("OnEvent", function(self, event, name)
     -- ── Settings panel ────────────────────────────────────────────────────────
 
     local category = Settings.RegisterVerticalLayoutCategory("Broker: MidnightEvents")
-
-    -- Section: Timed Events
-    Settings.RegisterInitializer(category,
-        CreateSettingsListSectionHeaderInitializer("Timed Events", nil))
-
-    for _, toggle in ipairs(ns.eventToggles or {}) do
-        local setting = Settings.RegisterAddOnSetting(
-            category, addonName .. "_event_" .. toggle.key,
-            toggle.key, db.events,
-            Settings.VarType.Boolean, toggle.label,
-            defaults.events[toggle.key] ~= false)
-        setting:SetValueChangedCallback(RefreshUI)
-        Settings.CreateCheckbox(category, setting,
-            "Show " .. toggle.label .. " in the Timed Events list.")
-    end
-
-    local hideDistantSetting = Settings.RegisterAddOnSetting(
-        category, addonName .. "_hideDistant", "hideDistant", db,
-        Settings.VarType.Boolean, "Hide events firing more than 24h away",
-        defaults.hideDistant)
-    hideDistantSetting:SetValueChangedCallback(RefreshUI)
-    Settings.CreateCheckbox(category, hideDistantSetting,
-        "Reduces clutter by hiding long-running events whose next firing is "
-        .. "more than 24 hours out.")
 
     -- Section: This Week
     Settings.RegisterInitializer(category,
