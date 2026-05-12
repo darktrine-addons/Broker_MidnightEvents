@@ -212,61 +212,62 @@ local function BuildTooltip()
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
-    -- ── Section 1: Timed Events ───────────────────────────────────────────────
-    -- Reads from ns.Events (C_EventScheduler-backed). Combines active +
-    -- upcoming-within-24h into one sorted list (smallest remaining seconds
-    -- first; untimed "ongoing" rows sink to the bottom).
+    -- ── Section 1: Now ────────────────────────────────────────────────────────
+    -- Events currently firing (scheduler ongoing + currently-active scheduled
+    -- + continuous map-event POIs). Order: insertion order from ns.Events,
+    -- which puts scheduler entries before map-event entries.
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Timed Events", CL_r, CL_g, CL_b)
+    GameTooltip:AddLine("Now", CL_r, CL_g, CL_b)
 
-    local now = time()
-    local rows = {}
-    if ns.Events then
-        for _, ev in ipairs(ns.Events.GetActive()) do
-            local secs, kind = EventRemaining(ev, now)
-            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
-        end
-        for _, ev in ipairs(ns.Events.GetUpcoming(24 * 3600)) do
-            local secs, kind = EventRemaining(ev, now)
-            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
-        end
-    end
-    table.sort(rows, function(a, b)
-        local sa = a.secs or math.huge
-        local sb = b.secs or math.huge
-        if sa == sb then return (a.ev.name or "") < (b.ev.name or "") end
-        return sa < sb
-    end)
-
-    if #rows == 0 then
+    local now    = time()
+    local active = ns.Events and ns.Events.GetActive() or {}
+    if #active == 0 then
         GameTooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        for _, r in ipairs(rows) do
-            local ev    = r.ev
+        for _, ev in ipairs(active) do
+            local secs, kind = EventRemaining(ev, now)
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
 
             local valueText, vr, vg, vb
-            if r.kind == "ongoing" then
+            if kind == "ongoing" then
                 valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
-            elseif r.secs and r.secs <= 0 then
+            elseif secs and secs <= 0 then
                 valueText, vr, vg, vb = "now!", CH_r, CH_g, CH_b
-            elseif r.kind == "upcoming" then
-                valueText = "in " .. FormatRemaining(r.secs)
-                if r.secs < 5 * 60 then
-                    vr, vg, vb = CH_r, CH_g, CH_b
-                else
-                    vr, vg, vb = 0.65, 0.75, 0.95
-                end
             else
-                valueText = FormatRemaining(r.secs) .. " left"
-                if r.secs < 5 * 60 then
+                valueText = FormatRemaining(secs) .. " left"
+                if secs and secs < 5 * 60 then
                     vr, vg, vb = CH_r, CH_g, CH_b
                 else
                     vr, vg, vb = CV_r, CV_g, CV_b
                 end
+            end
+            GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
+        end
+    end
+
+    -- ── Section 2: Upcoming (next 24h) ────────────────────────────────────────
+    -- Scheduler-fed list of future event firings within the next day. Already
+    -- sorted by startTime ascending in ns.Events. Section is suppressed when
+    -- empty so the tooltip doesn't grow a stub header for nothing.
+    local upcoming = ns.Events and ns.Events.GetUpcoming(24 * 3600) or {}
+    if #upcoming > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Upcoming (next 24h)", CL_r, CL_g, CL_b)
+        for _, ev in ipairs(upcoming) do
+            local secs  = (ev.startTime or 0) - now
+            local atlas = ev.atlasName
+            local label = atlas
+                          and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
+                          or  (ev.name or "Event")
+            local valueText = "in " .. FormatRemaining(secs)
+            local vr, vg, vb
+            if secs < 5 * 60 then
+                vr, vg, vb = CH_r, CH_g, CH_b
+            else
+                vr, vg, vb = 0.65, 0.75, 0.95
             end
             GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
@@ -410,7 +411,9 @@ local function BuildTooltip()
     -- ── Interaction hints ─────────────────────────────────────────────────────
     -- Keyword in orange, description in white (matches Broker: Coords).
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Shift-RightClick", "open settings",
+    GameTooltip:AddDoubleLine("LeftClick",   "open events panel",
+                              CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
+    GameTooltip:AddDoubleLine("RightClick",  "open settings",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
 
     -- ── Footer ────────────────────────────────────────────────────────────────
@@ -438,9 +441,22 @@ broker.OnLeave = function(self)
 end
 
 broker.OnClick = function(self, button)
-    if button == "RightButton" and IsShiftKeyDown() and ns.settingsCategoryID then
-        Settings.OpenToCategory(ns.settingsCategoryID)
+    if button == "LeftButton" then
+        -- Drop the user into Blizzard's native events panel. Prefer the first
+        -- currently-active event so the panel auto-focuses on something
+        -- relevant; fall back to opening the continent map if nothing's firing.
+        local poiID = ns.Events and ns.Events.GetFirstActivePOI()
+        if poiID and OpenMapToEventPoi then
+            OpenMapToEventPoi(poiID)
+        elseif OpenWorldMap and ns.Events then
+            OpenWorldMap(ns.Events.GetContinentMapID())
+        end
+    elseif button == "RightButton" and not IsShiftKeyDown() then
+        if ns.settingsCategoryID then
+            Settings.OpenToCategory(ns.settingsCategoryID)
+        end
     end
+    -- Shift-RightClick reserved for the Alts detail panel (Phase 8).
 end
 
 -- Exposed so Settings.lua callbacks can refresh both surfaces immediately
