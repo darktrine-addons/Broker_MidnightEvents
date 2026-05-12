@@ -86,12 +86,16 @@ end
 | Slayer's Rise | **likely a Stormarion sub-wave** | Neither ongoing nor scheduled, no separate POI. Widget set 1795 (Stormarion) was empty at probe time, consistent with a wave-only surface. Treat as part of Stormarion Assault; revisit if a future probe during an active wave reveals a separate POI. |
 | Bountiful Delves | **map-only, separate POI category** | `C_AreaPoiInfo.GetDelvesForMap(mapID)` returns delves; filter by `atlasName = "delves-bountiful"`. Handled by the Bountiful Delves module. |
 | Impending Void Incursion | **map-only, currently locked** | Surfaces on multiple zone maps with `isLocked=true`, atlas `ui-eventpoi-majorattacks`. Out of scope until it unlocks; flagged here for future awareness. |
+| World boss POIs | **continent map only** | The continent map (2537) surfaces world boss spawn locations via `GetEventsForMap` with `atlasName = "worldquest-icon-boss"` (e.g. Lu'ashal, areaPoiID 8682). Could optionally drive a "Lu'ashal is up" tooltip line; for now we rely on the per-boss kill-credit quest IDs in `ns.worldBosses`. |
+| Legends of the Haranir visibility | **inconsistent between chars** | Probe pass 1 (Shatanaris) had it in `GetOngoingEvents`; pass 2 (Artherio) did not. Either char-gated (e.g. requires Haranir unlock), or rotated out between the two captures. Treat the row defensively — render only if the API returns it; do not assume continuous presence. |
 
 **Per-event details available** — `_poi` blob carries `name`, `atlasName`, `zoneName`, `description`, `tooltipWidgetSet`, `isTimed`, `secondsLeft` (when timed). The `tooltipWidgetSet` ID exposes Blizzard's rich tooltip data (currency progress lines, wave counters) via `C_UIWidgetManager.GetAllWidgetsBySetID(setID)` if needed — useful for surfacing "Shards 6/8" in our tooltip.
 
 **No `ns.fixedCadence`, no zone-list scan for scheduled events** — both deleted. `EVENT_SCHEDULER_UPDATE` is the primary refresh hook. For continuous map-only POIs (Prey), supplement with a lightweight `GetEventsForMap` pass over the discovered Midnight zones on `AREA_POIS_UPDATED`.
 
 **Dynamic zone discovery**: walk up via `C_Map.GetMapInfo(...).parentMapID` from the player's current map to the Continent ancestor, then down via `C_Map.GetMapChildrenInfo`. Static zone lists are fragile — the first probe pass missed Isle of Quel'Danas (which carries the Parhelion Plaza bountiful delve). Use a fallback set only if the walk fails.
+
+**Midnight continent**: uiMapID **2537** ("Quel'Thalas"). Discovered children: 2393 Silvermoon City (sub-map of Eversong), 2395 Eversong Woods, 2405 Voidstorm, 2413 Harandar, 2424 Isle of Quel'Danas, 2437 Zul'Aman. Implementation note: `C_EventScheduler.GetActiveContinentName()` returned "Khaz Algar" (the TWW continent) during the probe — that API tracks the active expansion theme, not the player's current continent. Use parent-map walking, not `GetActiveContinentName`, for continent detection.
 
 ### Weekly checklist
 
@@ -126,20 +130,25 @@ Bountiful Delves are a separate POI category not surfaced by `C_EventScheduler`.
 - **Per-char completion**: has *this* character cleared the active bountiful set today?
 - **Alt roll-up**: which alts haven't cleared yet, for cross-char prioritisation.
 
-**API resolved (2026-05-12 probe)**:
+**API resolved (2026-05-12, two probe passes)**:
 
 ```lua
--- For each Midnight zone uiMapID (discover dynamically — see "Dynamic zone discovery" above):
-local ids = C_AreaPoiInfo.GetDelvesForMap(mapID) or {}
+-- Single-shot from the Midnight continent map gives all active bountifuls
+-- across all zones in one call. Simpler than walking each zone + deduping.
+local CONTINENT_ID = 2537  -- Quel'Thalas — discover dynamically; this is the
+                           -- current value, confirm at startup via map walk.
+local ids = C_AreaPoiInfo.GetDelvesForMap(CONTINENT_ID) or {}
 for _, poiID in ipairs(ids) do
-    local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
-    if info and info.atlasName == "delves-bountiful" and info.isPrimaryMapForPOI then
+    local info = C_AreaPoiInfo.GetAreaPOIInfo(CONTINENT_ID, poiID)
+    if info and info.atlasName == "delves-bountiful" then
         -- info.name, info.areaPoiID, info.tooltipWidgetSet, info.iconWidgetSet
     end
 end
 ```
 
-`isPrimaryMapForPOI` dedupes Delves that show on multiple zone maps (Atal'Aman appears on both Eversong and Zul'Aman). Probe found 3 distinct bountifuls across 4 of 5 probed zones (Quel'Danas pending in the next probe pass).
+**Today's bountifuls (continent map 2537)**: Parhelion Plaza (8665), Sunkiller Sanctum (8667), The Grudge Pit (8669), Atal'Aman (8677). Four per daily rotation, one per Midnight zone.
+
+**`areaPoiID` is map-relative.** The same underlying delve has different IDs on the continent map vs its host zone map (e.g. Atal'Aman = 8677 on continent / 8444 on Eversong / 8444 on Zul'Aman). For display + completion tracking the continent IDs are fine. For "super-track" / map-ping integration, use the per-zone ID — see `OpenMapToEventPoi` behaviour.
 
 **Per-Delve completion tracking still needs a harvest pass**: clear a bountiful Delve on a probed char, observe the `QUEST_TURNED_IN` event for the kill-credit quest ID. Without these IDs we can show the active list but not completion state.
 
@@ -394,8 +403,9 @@ Hierarchical, native WoW Settings API (matches Broker_PlayerCoords pattern). Thr
 | 18 | ~~Bountiful Delve POI API~~ *(Tier 2.5)* | **Resolved (2026-05-12 probe):** `C_AreaPoiInfo.GetDelvesForMap(mapID)` returns delves; filter by `atlasName = "delves-bountiful"`, dedupe via `isPrimaryMapForPOI`. Per-Delve completion quest IDs still need a harvest pass — see Q21. |
 | 19 | **Currency IDs** | Harvested via probe: Shard of Dundun **3376**, Field Accolade **3405**, Unalloyed Abundance **3377**, Dawnlight Manaflux **3378** (Soiree-related, 5/8 budget, same shape as Shards). Latent Arcana not present on probe char (likely unlocked at Soiree progression). All currently **dropped from scope** — Blizzard shows them inline. |
 | 20 | **World-boss weekly reset behaviour** | The four kill-credit quest IDs (92560 / 92123 / 92034 / 92636) reset weekly *(assumed)*; verify at next reset. If they're achievement-style we need a different approach. |
-| 21 | **Per-Bountiful-Delve completion quest IDs** *(Tier 2.5)* | Harvest pending — clear a bountiful on a probed char, observe `QUEST_TURNED_IN`. 3 distinct bountifuls seen this rotation (Grudge Pit, Sunkiller Sanctum, Atal'Aman); Parhelion Plaza on Quel'Danas confirmed visually as a 4th. |
-| 22 | **Prey POI integration** *(events surface)* | Prey is a continuous event POI on the Silvermoon map (areaPoiID 8742) but is **not** in `C_EventScheduler`. To show "Prey ongoing" we merge scheduler results with a per-zone `GetEventsForMap` scan. Cheap; just a code-pattern note for the events module. |
+| 21 | **Per-Bountiful-Delve completion quest IDs** *(Tier 2.5)* | Harvest pending — clear a bountiful on a probed char, observe `QUEST_TURNED_IN`. 4 distinct bountifuls confirmed this rotation: Parhelion Plaza (8665), Sunkiller Sanctum (8667), The Grudge Pit (8669), Atal'Aman (8677) — IDs on continent map 2537. |
+| 22 | **Prey POI integration** *(events surface)* | Prey is a continuous event POI on the Silvermoon map (areaPoiID 8742) but is **not** in `C_EventScheduler`. To show "Prey ongoing" we merge scheduler results with `GetEventsForMap` on the continent + key zone maps. Cheap; just a code-pattern note. |
+| 23 | **Legends of the Haranir char-gating?** | Shatanaris saw it ongoing; Artherio (probed minutes later) did not. Investigate whether visibility is character-progression-gated or rotation-driven; treat defensively until known. |
 
 ## General Risks
 
