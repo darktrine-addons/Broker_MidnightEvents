@@ -16,6 +16,24 @@ local broker = LDB:NewDataObject("Broker_MidnightEvents", {
 })
 ns.broker = broker  -- exposed for LibDBIcon registration in Settings.lua
 
+-- ── private tooltip frame ────────────────────────────────────────────────────
+-- 12.x's "addon apocalypse" protected-data model: reading values from
+-- C_EventScheduler (startTime, endTime, secondsLeft) and doing arithmetic
+-- on them taints our control flow. If we then write to the SHARED
+-- GameTooltip, the tooltip itself becomes globally tainted — and every
+-- subsequent Blizzard operation on GameTooltip (Hide, widget cleanup,
+-- other addons' or Blizzard's own tooltips) inherits the taint, hitting
+-- "attempt to compare a secret number value" errors deep in widget
+-- layout code.
+--
+-- Containment: use a dedicated GameTooltipTemplate frame for our own UI.
+-- Same look and AddLine/AddDoubleLine/atlas-inline behaviour as the
+-- shared one, but Blizzard never touches it, so our taint stays scoped.
+local Tooltip = CreateFrame("GameTooltip",
+                            "BrokerMidnightEventsTooltip",
+                            UIParent,
+                            "GameTooltipTemplate")
+
 -- ── tooltip colors ────────────────────────────────────────────────────────────
 local CL_r, CL_g, CL_b = 0.40, 0.80, 0.80   -- teal   (label / section)
 local CV_r, CV_g, CV_b = 1.00, 1.00, 1.00   -- white  (value)
@@ -408,8 +426,8 @@ local function SectionEnabled(key)
 end
 
 local function BuildTooltip()
-    GameTooltip:ClearLines()
-    GameTooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
+    Tooltip:ClearLines()
+    Tooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
     local now = time()
     local currentScheduler = CurrentSchedulerNames()
@@ -420,12 +438,12 @@ local function BuildTooltip()
     -- + continuous map-event POIs). Order: insertion order from ns.Events,
     -- which puts scheduler entries before map-event entries.
     if SectionEnabled("now") then
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Now", CL_r, CL_g, CL_b)
+    Tooltip:AddLine(" ")
+    Tooltip:AddLine("Now", CL_r, CL_g, CL_b)
 
     local active = ns.Events and ns.Events.GetActive() or {}
     if #active == 0 then
-        GameTooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
+        Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
@@ -476,7 +494,7 @@ local function BuildTooltip()
                 valueText = CHECK .. " " .. valueText
             end
 
-            GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
+            Tooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
     end
     end  -- SectionEnabled("now")
@@ -488,8 +506,8 @@ local function BuildTooltip()
     if SectionEnabled("upcoming") then
     local upcoming = ns.Events and ns.Events.GetUpcoming(24 * 3600) or {}
     if #upcoming > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Upcoming (next 24h)", CL_r, CL_g, CL_b)
+        Tooltip:AddLine(" ")
+        Tooltip:AddLine("Upcoming (next 24h)", CL_r, CL_g, CL_b)
         for _, ev in ipairs(upcoming) do
             local secs  = (ev.startTime or 0) - now
             local atlas = ev.atlasName
@@ -503,7 +521,7 @@ local function BuildTooltip()
             else
                 vr, vg, vb = 0.65, 0.75, 0.95
             end
-            GameTooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
+            Tooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
         end
     end
     end  -- SectionEnabled("upcoming")
@@ -549,8 +567,8 @@ local function BuildTooltip()
         local sr, sg, sb = CV_r, CV_g, CV_b
         if doneCount == total then sr, sg, sb = 0.6, 0.6, 0.6 end
 
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddDoubleLine(
+        Tooltip:AddLine(" ")
+        Tooltip:AddDoubleLine(
             "Bountiful Delves (today)",
             doneCount .. "/" .. total .. " done",
             CL_r, CL_g, CL_b, sr, sg, sb)
@@ -569,7 +587,7 @@ local function BuildTooltip()
                 lr, lg, lb = CV_r, CV_g, CV_b
                 vr, vg, vb = CH_r, CH_g, CH_b
             end
-            GameTooltip:AddDoubleLine(label, valueText, lr, lg, lb, vr, vg, vb)
+            Tooltip:AddDoubleLine(label, valueText, lr, lg, lb, vr, vg, vb)
         end
     end
     end  -- SectionEnabled("delves")
@@ -627,8 +645,8 @@ local function BuildTooltip()
         if done == total then sr, sg, sb = 0.6, 0.6, 0.6 end  -- fully done
 
         local charName = UnitName("player") or "?"
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddDoubleLine("This Week (" .. charName .. ")", summary,
+        Tooltip:AddLine(" ")
+        Tooltip:AddDoubleLine("This Week (" .. charName .. ")", summary,
             CL_r, CL_g, CL_b, sr, sg, sb)
 
         -- Stable sort: outstanding before done, original order within each group.
@@ -664,7 +682,7 @@ local function BuildTooltip()
                 valueText = CROSS
                 vR, vG, vB = CH_r, CH_g, CH_b
             end
-            GameTooltip:AddDoubleLine(r.label, valueText,
+            Tooltip:AddDoubleLine(r.label, valueText,
                 labelR, labelG, labelB, vR, vG, vB)
         end
     end
@@ -698,21 +716,21 @@ local function BuildTooltip()
         end
 
         if trackedCount > 1 then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(
+            Tooltip:AddLine(" ")
+            Tooltip:AddLine(
                 "Alts (" .. trackedCount .. " tracked, "
                 .. activeCount .. " active this reset)",
                 CL_r, CL_g, CL_b)
 
             if not ns.db or ns.db.showWorldBosses ~= false then
-                GameTooltip:AddDoubleLine("World Boss",
+                Tooltip:AddDoubleLine("World Boss",
                     wbDoneCount .. "/" .. activeCount .. " done",
                     CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
             end
 
             for _, w in ipairs(ns.weeklies or {}) do
                 local done = weeklyDoneCount[w.key] or 0
-                GameTooltip:AddDoubleLine(w.short or w.label,
+                Tooltip:AddDoubleLine(w.short or w.label,
                     done .. "/" .. activeCount .. " done",
                     CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
             end
@@ -721,36 +739,36 @@ local function BuildTooltip()
 
     -- ── Interaction hints ─────────────────────────────────────────────────────
     -- Keyword in orange, description in white (matches Broker: Coords).
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("LeftClick",        "open events panel",
+    Tooltip:AddLine(" ")
+    Tooltip:AddDoubleLine("LeftClick",        "open events panel",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
-    GameTooltip:AddDoubleLine("RightClick",       "open settings",
+    Tooltip:AddDoubleLine("RightClick",       "open settings",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
-    GameTooltip:AddDoubleLine("Shift-RightClick", "open alts panel",
+    Tooltip:AddDoubleLine("Shift-RightClick", "open alts panel",
                               CH_r, CH_g, CH_b, CV_r, CV_g, CV_b)
 
     -- ── Footer ────────────────────────────────────────────────────────────────
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("", "Broker: MidnightEvents  v" .. addonVersion,
+    Tooltip:AddLine(" ")
+    Tooltip:AddDoubleLine("", "Broker: MidnightEvents  v" .. addonVersion,
                               0, 0, 0, 0.45, 0.45, 0.45)
-    GameTooltip:Show()
+    Tooltip:Show()
 end
 
 broker.OnEnter = function(self)
     tooltipOwner = self
     local _, frameY = self:GetCenter()
-    GameTooltip:SetOwner(self, "ANCHOR_NONE")
+    Tooltip:SetOwner(self, "ANCHOR_NONE")
     if frameY and frameY > (GetScreenHeight() / 2) then
-        GameTooltip:SetPoint("TOPLEFT", self, "BOTTOMLEFT")
+        Tooltip:SetPoint("TOPLEFT", self, "BOTTOMLEFT")
     else
-        GameTooltip:SetPoint("BOTTOMLEFT", self, "TOPLEFT")
+        Tooltip:SetPoint("BOTTOMLEFT", self, "TOPLEFT")
     end
     BuildTooltip()
 end
 
 broker.OnLeave = function(self)
     tooltipOwner = nil
-    GameTooltip:Hide()
+    Tooltip:Hide()
 end
 
 broker.OnClick = function(self, button)
@@ -795,7 +813,7 @@ end
 -- after a toggle changes.
 ns.UpdateBrokerText = UpdateBrokerText
 function ns.RebuildTooltipIfOpen()
-    if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+    if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
         BuildTooltip()
     end
 end
@@ -814,7 +832,7 @@ f:SetScript("OnEvent", function(self, event)
         RefreshWeeklies()
     end
     UpdateBrokerText()
-    if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+    if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
         BuildTooltip()
     end
     if ns.AltsPanel and ns.AltsPanel.RefreshIfShown then
@@ -828,7 +846,7 @@ if ns.Events and ns.Events.RegisterListener then
     ns.Events.RegisterListener(function()
         UpdateBountifulSeen()
         UpdateBrokerText()
-        if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+        if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
             BuildTooltip()
         end
     end)
@@ -843,7 +861,7 @@ f:SetScript("OnUpdate", function(self, dt)
     if tickerElapsed >= 1.0 then
         tickerElapsed = 0
         UpdateBrokerText()
-        if tooltipOwner and GameTooltip:IsOwned(tooltipOwner) then
+        if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
             BuildTooltip()
         end
     end
