@@ -63,6 +63,33 @@ local function FormatRemaining(secs)
     return d .. "d " .. h .. "h " .. m .. "m"
 end
 
+-- Pull the first StatusBar widget's value from a tooltipWidgetSet and return
+-- it as (barValue, barMax, percent). nil when the set has no StatusBar
+-- widget or no fill data. Used to surface "building up" events (Impending
+-- Void Incursion etc.) with their progress percentage so the player can
+-- decide whether to chase the location before it fires.
+--
+-- Cheap to call per render (~1 widget query per event in the Now section);
+-- no caching needed at current event counts.
+local function GetWidgetProgress(setID)
+    if not (setID and C_UIWidgetManager
+            and C_UIWidgetManager.GetAllWidgetsBySetID
+            and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo) then
+        return nil
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    for _, w in ipairs(widgets) do
+        if w.widgetType == 2 then  -- Enum.UIWidgetVisualizationType.StatusBar
+            local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
+            if info and info.barMax and info.barMax > 0 then
+                return info.barValue, info.barMax,
+                       (info.barValue or 0) / info.barMax * 100
+            end
+        end
+    end
+    return nil
+end
+
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
 -- Prefers epoch fields (startTime/endTime) over server-snapshot secondsLeft
 -- so countdowns decrement live between Events refreshes.
@@ -453,16 +480,35 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        -- Pre-compute remaining + kind so we can sort, then render.
+        -- Pre-compute remaining + kind + progress so we can sort, then
+        -- render. Locked "building up" events (Impending Void Incursion)
+        -- without extractable progress are skipped — they're not actionable.
         local rows = {}
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
-            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
+            local progPct
+            if ev.tooltipWidgetSet then
+                local _, _, pct = GetWidgetProgress(ev.tooltipWidgetSet)
+                progPct = pct
+            end
+            -- Drop locked events with no progress signal (genuinely
+            -- unavailable POIs, not "building up").
+            if not (ev.isLocked and not progPct) then
+                rows[#rows + 1] = {
+                    ev = ev, secs = secs, kind = kind, progPct = progPct,
+                }
+            end
         end
-        -- Sort key: untimed "ongoing" → math.huge (sink to bottom). Others
-        -- by secs ascending (smallest remaining first). Stable secondary
-        -- sort by name keeps adjacent rows in a deterministic order.
+        -- Sort key:
+        --   - Untimed "ongoing" continuous events → math.huge (bottom).
+        --   - "Building up" locked events → (100 - pct) * 60 synthetic
+        --     seconds, putting a 94% event near a 6-min countdown — close
+        --     to firing surfaces near the top.
+        --   - Everything else → seconds-left ascending.
         local function sortKey(r)
+            if r.ev.isLocked and r.progPct then
+                return math.max(0, (100 - r.progPct) * 60)
+            end
             if r.kind == "ongoing" or not r.secs then return math.huge end
             return r.secs
         end
@@ -473,9 +519,10 @@ local function BuildTooltip()
         end)
 
         for _, r in ipairs(rows) do
-            local ev   = r.ev
-            local secs = r.secs
-            local kind = r.kind
+            local ev      = r.ev
+            local secs    = r.secs
+            local kind    = r.kind
+            local progPct = r.progPct
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
@@ -488,7 +535,21 @@ local function BuildTooltip()
             local isClaimed = IsLikelyClaimed(ev, currentScheduler)
 
             local valueText, vr, vg, vb
-            if kind == "ongoing" then
+            if ev.isLocked and progPct then
+                -- "Building up" event (Impending Void Incursion). Surface the
+                -- fill % as the timer. Color graded by proximity to firing:
+                --   ≥ 90%   urgent amber — it's about to fire, get there
+                --   ≥ 50%   white       — meaningful progress, worth noting
+                --   <  50%  dim cyan    — visible but low-priority
+                valueText = string.format("%d%% built", math.floor(progPct))
+                if progPct >= 90 then
+                    vr, vg, vb = CH_r, CH_g, CH_b
+                elseif progPct >= 50 then
+                    vr, vg, vb = CV_r, CV_g, CV_b
+                else
+                    vr, vg, vb = 0.65, 0.75, 0.95
+                end
+            elseif kind == "ongoing" then
                 valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
             elseif kind == "wave" then
                 -- Continuous POI with an internal wave cycle. Show the

@@ -291,18 +291,25 @@ local function Refresh()
         end
     end
 
-    -- 3. Continuous map-event POIs (Prey, etc.) on the continent map → active.
-    --    Filter to event atlases, current events, and unlocked POIs. Dedup
-    --    against scheduler entries via BOTH the areaPoiID seen[] set AND
-    --    seenNames[] (scheduler and continent map use different POI IDs for
-    --    the same underlying event — name is the canonical key).
+    -- 3. Continuous map-event POIs on the continent map → active.
+    --    Filter to event atlases + currently-active POIs. Dedup against
+    --    scheduler entries via BOTH the areaPoiID seen[] set AND seenNames[]
+    --    (scheduler and continent map use different POI IDs for the same
+    --    underlying event — name is the canonical key).
+    --
+    --    isLocked is preserved on the entry but NOT used as a filter:
+    --    "building up" events (Impending Void Incursion) show as locked
+    --    until their fill bar hits 100%. We want to surface them with their
+    --    progress percentage so the player can decide whether to chase the
+    --    location. The Now-section renderer skips locked events that have
+    --    no extractable progress data (covers genuinely-unavailable POIs).
     if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
         local mapID = state.continentMapID
         local ids   = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
         for _, poiID in ipairs(ids) do
             if not seen[poiID] then
                 local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
-                if info and info.isCurrentEvent and not info.isLocked
+                if info and info.isCurrentEvent
                    and LooksLikeEventAtlas(info.atlasName)
                    and not (info.name and seenNames[info.name]) then
                     state.active[#state.active + 1] = BuildMapEntry(poiID, info)
