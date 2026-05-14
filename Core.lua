@@ -1119,6 +1119,224 @@ SlashCmdList.BMEPOIS = function()
     end
 end
 
+-- Dev diagnostic: capture EVERY relevant API output to SavedVariables in a
+-- single call. Designed to skip the chat-paste round-trip — user copies the
+-- relevant block out of Broker_MidnightEvents.lua in the SV directory and
+-- shares the file content. Overwrites previous dump on each invocation.
+--
+-- Writes to ns.db._diag (no TOC changes needed — Broker_MidnightEventsDB is
+-- always declared). SavedVariables flush to disk on logout / /reload, so
+-- the user MUST /reload (or log out) after /mediag for the file to update.
+--
+-- Captures:
+--   * server time, daily/weekly reset countdowns, player map context
+--   * C_EventScheduler: HasData + Ongoing + Scheduled with EVERY field
+--     including displayInfo subfields, plus GetEventUiMapID per entry and
+--     three name-resolution sources (live API, our cache, our hardcoded
+--     fallback) so we can see exactly which path each entry resolves through
+--   * C_AreaPoiInfo: continent + every Midnight zone, GetEventsForMap and
+--     GetDelvesForMap, each POI's full GetAreaPOIInfo flattened plus
+--     IsAreaPOITimed / GetAreaPOISecondsLeft
+--   * C_UIWidgetManager: for every widget set referenced by any POI in the
+--     map scan above PLUS every set in ns.eventProgressWidgetSet, dump the
+--     full widget list with type-specific visualization info
+--   * our addon's current view (ns.Events.GetActive / GetUpcoming)
+--   * the lookup tables (ns.knownEventNames, ns.eventProgressWidgetSet,
+--     ns.eventFiringHeuristic) so the analyst doesn't have to cross-ref
+local function flattenTable(t, depth)
+    if type(t) ~= "table" then return t end
+    depth = depth or 0
+    if depth > 2 then return "<too deep>" end
+    local out = {}
+    for k, v in pairs(t) do
+        local tv = type(v)
+        if tv == "table" then
+            out[k] = flattenTable(v, depth + 1)
+        elseif tv ~= "function" and tv ~= "userdata" and tv ~= "thread" then
+            out[k] = v
+        end
+    end
+    return out
+end
+
+local function capturePoi(mapID, poiID)
+    local info = C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
+                 and C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID) or nil
+    local out = { _mapID = mapID, _poiID = poiID }
+    if info then
+        for k, v in pairs(info) do
+            local tv = type(v)
+            if tv ~= "table" and tv ~= "function" and tv ~= "userdata" then
+                out[k] = v
+            end
+        end
+    else
+        out._noInfo = true
+    end
+    if C_AreaPoiInfo and C_AreaPoiInfo.IsAreaPOITimed then
+        out._isTimed = C_AreaPoiInfo.IsAreaPOITimed(poiID) or false
+        if out._isTimed and C_AreaPoiInfo.GetAreaPOISecondsLeft then
+            out._secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
+        end
+    end
+    return out
+end
+
+local function captureSchedulerEntry(ev)
+    local out = { _raw = flattenTable(ev) }
+    out._uiMapID = C_EventScheduler and C_EventScheduler.GetEventUiMapID
+                   and C_EventScheduler.GetEventUiMapID(ev.areaPoiID)
+    out._zoneName = C_EventScheduler and C_EventScheduler.GetEventZoneName
+                    and C_EventScheduler.GetEventZoneName(ev.areaPoiID)
+    -- Resolution paths
+    if out._uiMapID and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo then
+        local info = C_AreaPoiInfo.GetAreaPOIInfo(out._uiMapID, ev.areaPoiID)
+        out._liveName = info and info.name
+        out._liveAtlas = info and info.atlasName
+    end
+    out._cacheName = (ns.db and ns.db.eventNameCache)
+                     and ns.db.eventNameCache[ev.areaPoiID]
+    out._knownEventName = ns.knownEventNames
+                          and ns.knownEventNames[ev.areaPoiID]
+    return out
+end
+
+local function captureWidgetSet(setID)
+    local out = { setID = setID, widgets = {} }
+    if not (C_UIWidgetManager and C_UIWidgetManager.GetAllWidgetsBySetID) then
+        return out
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    out.count = #widgets
+    for i, w in ipairs(widgets) do
+        local infoFn = WIDGET_INFO_FNS[w.widgetType]
+        local info = infoFn and infoFn(w.widgetID) or nil
+        out.widgets[i] = {
+            widgetID    = w.widgetID,
+            widgetType  = w.widgetType,
+            typeName    = WIDGET_TYPE_NAMES[w.widgetType],
+            info        = info and flattenTable(info) or nil,
+        }
+    end
+    return out
+end
+
+SLASH_BMEDIAG1 = "/mediag"
+SlashCmdList.BMEDIAG = function()
+    if not ns.db then
+        print("|cffffcc00MidnightEvents|r — SV not yet initialized")
+        return
+    end
+
+    local D = { _schemaVersion = 1, _capturedAt = time() }
+    D.serverTime = GetServerTime and GetServerTime() or nil
+    D.realmName  = GetRealmName and GetRealmName() or nil
+    D.playerName = UnitName("player")
+    D.playerMap  = C_Map and C_Map.GetBestMapForUnit
+                   and C_Map.GetBestMapForUnit("player")
+    D.continentMapID = ns.Events and ns.Events.GetContinentMapID()
+    if C_DateAndTime then
+        if C_DateAndTime.GetSecondsUntilDailyReset then
+            D.secsUntilDailyReset = C_DateAndTime.GetSecondsUntilDailyReset()
+        end
+        if C_DateAndTime.GetSecondsUntilWeeklyReset then
+            D.secsUntilWeeklyReset = C_DateAndTime.GetSecondsUntilWeeklyReset()
+        end
+    end
+
+    -- Scheduler
+    D.scheduler = {}
+    if C_EventScheduler then
+        D.scheduler.hasData = C_EventScheduler.HasData
+                              and C_EventScheduler.HasData() or false
+        D.scheduler.ongoing = {}
+        for i, ev in ipairs((C_EventScheduler.GetOngoingEvents and
+                             C_EventScheduler.GetOngoingEvents()) or {}) do
+            D.scheduler.ongoing[i] = captureSchedulerEntry(ev)
+        end
+        D.scheduler.scheduled = {}
+        for i, ev in ipairs((C_EventScheduler.GetScheduledEvents and
+                             C_EventScheduler.GetScheduledEvents()) or {}) do
+            D.scheduler.scheduled[i] = captureSchedulerEntry(ev)
+        end
+    end
+
+    -- Map POIs
+    D.mapPois = {}
+    local widgetSetSet = {}
+    local function noteWS(s) if s then widgetSetSet[s] = true end end
+    local function scanMap(mapID, label)
+        local block = { mapID = mapID, label = label, events = {}, delves = {} }
+        if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
+            for _, poiID in ipairs(C_AreaPoiInfo.GetEventsForMap(mapID) or {}) do
+                local p = capturePoi(mapID, poiID)
+                block.events[#block.events + 1] = p
+                noteWS(p.tooltipWidgetSet); noteWS(p.iconWidgetSet)
+            end
+        end
+        if C_AreaPoiInfo and C_AreaPoiInfo.GetDelvesForMap then
+            for _, poiID in ipairs(C_AreaPoiInfo.GetDelvesForMap(mapID) or {}) do
+                local p = capturePoi(mapID, poiID)
+                block.delves[#block.delves + 1] = p
+                noteWS(p.tooltipWidgetSet); noteWS(p.iconWidgetSet)
+            end
+        end
+        return block
+    end
+    local continentMapID = D.continentMapID or 2537
+    D.mapPois.continent = scanMap(continentMapID, "continent")
+    D.mapPois.zones = {}
+    for _, mid in ipairs(MIDNIGHT_ZONE_IDS) do
+        D.mapPois.zones[#D.mapPois.zones + 1] = scanMap(mid, "zone")
+    end
+
+    -- Add any widget sets we have explicit overrides for
+    if ns.eventProgressWidgetSet then
+        for _, s in pairs(ns.eventProgressWidgetSet) do noteWS(s) end
+    end
+    -- And any referenced by scheduler entries' raw displayInfo
+    for _, group in ipairs({ D.scheduler.ongoing or {}, D.scheduler.scheduled or {} }) do
+        for _, e in ipairs(group) do
+            local di = e._raw and e._raw.displayInfo
+            if di then noteWS(di.overrideTooltipWidgetSetID) end
+        end
+    end
+
+    D.widgetSets = {}
+    for s in pairs(widgetSetSet) do
+        D.widgetSets[s] = captureWidgetSet(s)
+    end
+
+    -- Addon's current view
+    D.addonView = {}
+    if ns.Events then
+        D.addonView.active   = flattenTable(ns.Events.GetActive())
+        D.addonView.upcoming = flattenTable(ns.Events.GetUpcoming())
+        D.addonView.bountifulDelves = flattenTable(ns.Events.GetBountifulDelves())
+    end
+
+    -- Lookup tables in effect
+    D.lookups = {
+        knownEventNames        = flattenTable(ns.knownEventNames),
+        eventProgressWidgetSet = flattenTable(ns.eventProgressWidgetSet),
+        eventFiringHeuristic   = flattenTable(ns.eventFiringHeuristic),
+        eventNameCache         = flattenTable(ns.db.eventNameCache),
+    }
+
+    ns.db._diag = D
+    print(string.format(
+        "|cffffcc00MidnightEvents|r diag captured: sched.ongoing=%d sched.scheduled=%d, "
+        .. "continent.events=%d, zones=%d, widgetSets=%d",
+        #(D.scheduler.ongoing or {}),
+        #(D.scheduler.scheduled or {}),
+        #D.mapPois.continent.events,
+        #D.mapPois.zones,
+        (function() local n = 0 for _ in pairs(D.widgetSets) do n = n + 1 end return n end)()))
+    print("|cffffcc00MidnightEvents|r Run /reload (or log out) so SV flushes to disk.")
+    print("|cffffcc00  File:|r WTF/Account/<ID>/SavedVariables/Broker_MidnightEvents.lua")
+    print("|cffffcc00  Key:|r  Broker_MidnightEventsDB._diag")
+end
+
 SLASH_BMEWIDGET1 = "/mewidget"
 SlashCmdList.BMEWIDGET = function(msg)
     if not C_UIWidgetManager then
