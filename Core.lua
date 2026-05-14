@@ -112,12 +112,24 @@ end
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
 -- Prefers epoch fields (startTime/endTime) over server-snapshot secondsLeft
 -- so countdowns decrement live between Events refreshes.
---   "upcoming" — startTime > now; secs = startTime - now
---   "active"   — currently firing; secs = endTime - now (or secondsLeft fallback)
+--   "upcoming" — future fire. secs = time-until-fire.
+--                For scheduler-scheduled entries: endTime is the fire time
+--                (not "active until"); startTime is a pre-fire schedule
+--                lock-in timestamp that can be in the past. We always treat
+--                source="scheduler-scheduled" as upcoming with endTime as
+--                the fire time.
+--                For other sources: startTime > now → fire at startTime.
+--   "active"   — currently firing (map-event POIs with secondsLeft, or
+--                scheduler-ongoing with an endTime — though ongoing
+--                entries typically lack one).
 --   "wave"     — continuously-ongoing POI with an internal wave cadence
 --                (Stormarion Assault); secs = wall-clock seconds to next wave
 --   "ongoing"  — untimed and no cadence override (Legends); secs = nil
 local function EventRemaining(ev, now)
+    if ev.source == "scheduler-scheduled"
+       and ev.endTime and ev.endTime > now then
+        return ev.endTime - now, "upcoming"
+    end
     if ev.startTime and ev.startTime > now then
         return ev.startTime - now, "upcoming"
     end
@@ -488,31 +500,14 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        -- Threshold model for currently-active event timers:
-        --   * LONG_TIMER_CAP (12h): treat as untimed continuous regardless
-        --     of source. Catches both map-event "time-until-weekly-reset"
-        --     timers (Void Incursion / Rift variants) AND scheduler-active
-        --     entries with week-long windows (Void Assaults: active until
-        --     +7078m). Both render as "active" instead of misleading
-        --     multi-day countdowns.
-        --   * FIRE_WINDOW (2h): map-event POIs whose secondsLeft is between
-        --     FIRE_WINDOW and LONG_TIMER_CAP AND have no progress widget
-        --     are between-firings rotation timers (Abundance variants
-        --     sitting on the map with "next firing in 6h" countdowns).
-        --     Drop them from Now — the scheduler-scheduled-active branch
-        --     surfaces the genuinely-firing variant with the right timer.
-        --     Restricted to map-event source because scheduler entries with
-        --     timers in this range are legit fire windows (Skinning Den
-        --     active for 8h is real, not rotation noise).
+        -- LONG_TIMER_CAP (12h): render long timers as untimed "active"
+        -- instead of multi-day countdowns. Catches Void Incursion / Rift
+        -- variants whose map-POI secondsLeft is time-until-weekly-reset,
+        -- and any scheduler entry that snuck into active with a multi-day
+        -- duration. Legit Abundance fire windows (up to 8h) stay timed.
         local LONG_TIMER_CAP = 12 * 3600
-        local FIRE_WINDOW    =  2 * 3600
         local function isLongTimer(ev, secs)
             return secs and secs > LONG_TIMER_CAP
-        end
-        local function isBetweenFirings(ev, secs, progPct)
-            return ev.source == "map-event"
-                   and secs and secs > FIRE_WINDOW and secs <= LONG_TIMER_CAP
-                   and not progPct
         end
 
         -- Pre-compute remaining + kind + progress so we can sort, then
@@ -527,8 +522,7 @@ local function BuildTooltip()
             if isLongTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
-            local skip = (ev.isLocked and not progPct)
-                         or isBetweenFirings(ev, secs, progPct)
+            local skip = ev.isLocked and not progPct
             if not skip then
                 rows[#rows + 1] = {
                     ev = ev, secs = secs, kind = kind,
@@ -630,7 +624,7 @@ local function BuildTooltip()
         Tooltip:AddLine(" ")
         Tooltip:AddLine("Upcoming (next 24h)", CL_r, CL_g, CL_b)
         for _, ev in ipairs(upcoming) do
-            local secs  = (ev.startTime or 0) - now
+            local secs  = (ev.endTime or ev.startTime or 0) - now
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))

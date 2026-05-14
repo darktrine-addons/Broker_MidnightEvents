@@ -279,38 +279,27 @@ local function Refresh()
         end
     end
 
-    -- 2. Scheduler scheduled → split into active + upcoming based on the
-    --    entry's window. startTime/endTime frame each variant's claim
-    --    window (Abundance variants run 8h each; Void Assaults runs the
-    --    whole week). Per /mesched + Blizz panel cross-check (2026-05-14):
+    -- 2. Scheduler scheduled → upcoming. /mediag dump cross-checked against
+    --    the in-game map (2026-05-14) resolved a long-standing ambiguity:
+    --    each scheduler-scheduled entry's endTime IS the variant's next
+    --    fire time. startTime is a pre-fire "schedule lock-in" timestamp
+    --    that can be in the past — past-startTime entries are NOT
+    --    currently firing (verified: scheduler entry [2] poi=8525 Skinning
+    --    Den had past startTime + future endTime, but the only Abundance
+    --    POI visible on any map was Herbalism Grotto, AND that map POI's
+    --    secondsLeft expired at exactly the same moment as entry [2]'s
+    --    endTime). The variant currently firing comes through the
+    --    map-event scan below. Scheduler-scheduled is upcoming only.
     --
-    --      startTime <= now < endTime → currently FIRING (the variant the
-    --                                    Blizz panel highlights, the player
-    --                                    can claim its reward right now)
-    --      startTime > now            → upcoming, sorted ascending
-    --      endTime  <= now            → stale rotation entry, drop
-    --
-    --    An earlier theory treated past-start entries as "rotation
-    --    artifacts" and dropped them — that was wrong. Those entries are
-    --    the genuinely-active variant. Skipping them meant the Now section
-    --    silently omitted whichever Abundance variant was currently firing
-    --    while the misleading map-event POI for the *next* variant snuck
-    --    in with a rotation-timer "X left" instead.
+    --    Filter by endTime > now (any future fire — past-startTime is OK).
+    --    Sort by endTime ascending so the renderer can use endTime - now
+    --    as the "in X" countdown. Matches the Blizz events panel ordering.
     local rawScheduled = C_EventScheduler.GetScheduledEvents
                          and C_EventScheduler.GetScheduledEvents() or {}
     for _, ev in ipairs(rawScheduled) do
-        local st = ev.startTime or 0
-        local et = ev.endTime or 0
-        local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
-        if poi then
-            if st <= now and et > now then
-                if not seen[ev.areaPoiID] then
-                    state.active[#state.active + 1] =
-                        BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
-                    seen[ev.areaPoiID] = true
-                    if poi.name then seenNames[poi.name] = true end
-                end
-            elseif st > now then
+        if ev.endTime and ev.endTime > now then
+            local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
+            if poi then
                 state.upcoming[#state.upcoming + 1] =
                     BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
             end
@@ -363,8 +352,11 @@ local function Refresh()
         end
     end
 
+    -- Sort by endTime ascending (= fire time ascending). See the
+    -- scheduler-scheduled processing block for the endTime-is-fire-time
+    -- discovery.
     table.sort(state.upcoming, function(a, b)
-        return (a.startTime or 0) < (b.startTime or 0)
+        return (a.endTime or 0) < (b.endTime or 0)
     end)
 
     -- 4. Bountiful Delves on the continent map. Distinct POI category from
@@ -408,14 +400,16 @@ function ns.Events.GetActive()
     return state.active
 end
 
--- Scheduled events with `startTime > now`. Pass `maxAheadSecs` to clip the
--- window; nil returns the full ~72h list. Sorted by startTime ascending.
+-- Upcoming scheduler fires, sorted ascending by fire time (= endTime).
+-- Pass `maxAheadSecs` to clip the window by fire time; nil returns the
+-- full list. See the Refresh comment on why endTime is the fire time
+-- (not startTime).
 function ns.Events.GetUpcoming(maxAheadSecs)
     if not maxAheadSecs then return state.upcoming end
     local cutoff = time() + maxAheadSecs
     local out = {}
     for _, ev in ipairs(state.upcoming) do
-        if (ev.startTime or 0) <= cutoff then
+        if (ev.endTime or 0) <= cutoff then
             out[#out + 1] = ev
         end
     end
