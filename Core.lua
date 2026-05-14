@@ -232,15 +232,30 @@ end
 
 -- ── broker text ───────────────────────────────────────────────────────────────
 
--- Walk active + upcoming events and pick the row with the smallest non-nil
--- remaining-seconds. Falls back to the first untimed active event ("ongoing")
--- when nothing has a countdown.
+-- Walk active + upcoming events and pick the row to surface in the broker
+-- bar. Priority:
+--   1. Any event whose firing heuristic (Data.lua's ns.eventFiringHeuristic)
+--      reports it as firing right now. Highest player value — "you should
+--      rush to this NOW" beats every countdown.
+--   2. Smallest non-nil remaining-seconds across active + upcoming.
+--   3. Fallback to first untimed active event ("ongoing") when nothing has
+--      a countdown.
 local function GetSoonest()
     if not ns.Events then return nil end
     local now = time()
-    local soonest, soonestSecs, soonestKind
 
-    for _, ev in ipairs(ns.Events.GetActive()) do
+    local active = ns.Events.GetActive()
+    if ns.IsEventFiring then
+        for _, ev in ipairs(active) do
+            local _, _, progPct = GetEventProgress(ev)
+            if ns.IsEventFiring(ev.areaPoiID, progPct) then
+                return ev, nil, "firing"
+            end
+        end
+    end
+
+    local soonest, soonestSecs, soonestKind
+    for _, ev in ipairs(active) do
         local secs, kind = EventRemaining(ev, now)
         if secs and (not soonestSecs or secs < soonestSecs) then
             soonest, soonestSecs, soonestKind = ev, secs, kind
@@ -252,11 +267,8 @@ local function GetSoonest()
             soonest, soonestSecs, soonestKind = ev, secs, kind
         end
     end
-    if not soonest then
-        local active = ns.Events.GetActive()
-        if active[1] then
-            soonest, soonestSecs, soonestKind = active[1], nil, "ongoing"
-        end
+    if not soonest and active[1] then
+        soonest, soonestSecs, soonestKind = active[1], nil, "ongoing"
     end
     return soonest, soonestSecs, soonestKind
 end
@@ -342,6 +354,9 @@ end
 local function FormatEventTag(ev, secs, kind)
     if not ev then return nil, false end
     local short = ShortName(ev.name)
+    if kind == "firing" then
+        return short .. " FIRING NOW!", true
+    end
     if kind == "ongoing" then
         return short .. " ongoing", false
     end
