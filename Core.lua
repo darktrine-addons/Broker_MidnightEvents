@@ -63,31 +63,42 @@ local function FormatRemaining(secs)
     return d .. "d " .. h .. "h " .. m .. "m"
 end
 
--- Pull the first StatusBar widget's value from a tooltipWidgetSet and return
--- it as (barValue, barMax, percent). nil when the set has no StatusBar
--- widget or no fill data. Used to surface "building up" events (Impending
--- Void Incursion etc.) with their progress percentage so the player can
--- decide whether to chase the location before it fires.
+-- Pull the first StatusBar widget's value from any of the candidate widget
+-- sets and return (barValue, barMax, percent). nil when no set has a
+-- StatusBar widget with fill data.
 --
--- Cheap to call per render (~1 widget query per event in the Now section);
+-- Why multiple sets: Void Incursion's tooltipWidgetSet (2041) only has the
+-- text widgets shown in the on-hover tooltip ("Rewards:", "Void forces are
+-- attacking…"). The actual progress StatusBar lives in iconWidgetSet (2042)
+-- — that's what drives the "1%" overlay you see on the map icon. We try
+-- tooltipWidgetSet first, then iconWidgetSet, so events that put the bar in
+-- either spot just work.
+--
+-- Cheap to call per render (~2 widget queries per event in the Now section);
 -- no caching needed at current event counts.
-local function GetWidgetProgress(setID)
-    if not (setID and C_UIWidgetManager
+local function GetEventProgress(ev)
+    if not (ev and C_UIWidgetManager
             and C_UIWidgetManager.GetAllWidgetsBySetID
             and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo) then
         return nil
     end
-    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
-    for _, w in ipairs(widgets) do
-        if w.widgetType == 2 then  -- Enum.UIWidgetVisualizationType.StatusBar
-            local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
-            if info and info.barMax and info.barMax > 0 then
-                return info.barValue, info.barMax,
-                       (info.barValue or 0) / info.barMax * 100
+    local function probe(setID)
+        if not setID then return nil end
+        local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+        for _, w in ipairs(widgets) do
+            if w.widgetType == 2 then  -- Enum.UIWidgetVisualizationType.StatusBar
+                local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
+                if info and info.barMax and info.barMax > 0 then
+                    return info.barValue, info.barMax,
+                           (info.barValue or 0) / info.barMax * 100
+                end
             end
         end
+        return nil
     end
-    return nil
+    local v, m, p = probe(ev.tooltipWidgetSet)
+    if v then return v, m, p end
+    return probe(ev.iconWidgetSet)
 end
 
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
@@ -275,23 +286,31 @@ end
 -- Heuristic test: is this event entry presumed to be claimed today by the
 -- current char?
 --
---   ev.source == "map-event"  — comes via continent-map scan, not scheduler
---   ev.isTimed                — has a finite firing window, so it's a
---                                scheduler-eligible event (rules out Prey
---                                and other untimed continuous POIs)
---   not current[ev.name]      — scheduler is currently filtering it out
+--   ev.source == "map-event"     — comes via map scan, not scheduler
+--   ev.isTimed                   — finite firing window (rules out untimed
+--                                   continuous POIs like Prey, Haranir)
+--   ev.name in schedulerNamesSeen — name has been observed in the scheduler
+--                                   list at some point (account-wide); rules
+--                                   out always-map-only events (Void
+--                                   Incursion, A Sea Voidage, Abyss Anglers)
+--                                   which are never scheduler-eligible and
+--                                   would otherwise false-positive claimed
+--   not current[ev.name]         — scheduler is currently filtering it out
 --
--- All three together: the scheduler stopped returning this scheduler-
--- eligible event for this char, but it's still visible on the world map.
+-- All four together: a scheduler-eligible event stopped being returned by
+-- the scheduler for this char, but it's still visible on the world map.
 -- That's the disappearance-as-completion signal Blizzard's API gives us.
 --
--- Works cold (player logs in already-claimed) — the per-session cache
--- approach I tried before couldn't catch that case.
+-- Works cold (player logs in already-claimed). schedulerNamesSeen is
+-- populated lazily in Events.lua Refresh — first observation of any
+-- scheduler entry on any char locks the name in as claimable.
 local function IsLikelyClaimed(ev, currentScheduler)
-    return ev.source == "map-event"
-       and ev.isTimed
-       and ev.name
-       and not currentScheduler[ev.name]
+    if ev.source ~= "map-event" or not ev.isTimed or not ev.name then
+        return false
+    end
+    if currentScheduler[ev.name] then return false end
+    local seen = ns.db and ns.db.schedulerNamesSeen
+    return seen ~= nil and seen[ev.name] == true
 end
 
 -- Reconcile char.bountifulSeen with the live Events list. Wipe on daily
@@ -486,11 +505,7 @@ local function BuildTooltip()
         local rows = {}
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
-            local progPct
-            if ev.tooltipWidgetSet then
-                local _, _, pct = GetWidgetProgress(ev.tooltipWidgetSet)
-                progPct = pct
-            end
+            local _, _, progPct = GetEventProgress(ev)
             -- Drop locked events with no progress signal (genuinely
             -- unavailable POIs, not "building up").
             if not (ev.isLocked and not progPct) then
@@ -1070,12 +1085,13 @@ SlashCmdList.BMEPOIS = function()
                 local timed = C_AreaPoiInfo.IsAreaPOITimed
                               and C_AreaPoiInfo.IsAreaPOITimed(poiID) or false
                 print(string.format(
-                    "  poi=%d  cur=%s lock=%s timed=%s  atlas=%s  name=%s  ws=%s",
+                    "  poi=%d  cur=%s lock=%s timed=%s  atlas=%s  name=%s  tws=%s iws=%s",
                     poiID,
                     tostring(info.isCurrentEvent), tostring(info.isLocked),
                     tostring(timed),
                     tostring(info.atlasName), tostring(info.name),
-                    tostring(info.tooltipWidgetSet)))
+                    tostring(info.tooltipWidgetSet),
+                    tostring(info.iconWidgetSet)))
             else
                 print(string.format("  poi=%d  (no info)", poiID))
             end

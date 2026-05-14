@@ -124,6 +124,7 @@ local function ResolvePoi(areaPoiID, displayInfo)
     local atlas       = info and info.atlasName
     local description = info and info.description
     local widgetSet   = info and info.tooltipWidgetSet
+    local iconSet     = info and info.iconWidgetSet
     if displayInfo then
         if displayInfo.overrideAtlas              then atlas       = displayInfo.overrideAtlas end
         if displayInfo.hideDescription            then description = nil end
@@ -145,6 +146,7 @@ local function ResolvePoi(areaPoiID, displayInfo)
         zoneName         = zone,
         description      = description,
         tooltipWidgetSet = widgetSet,
+        iconWidgetSet    = iconSet,
         isTimed          = isTimed,
         secondsLeft      = secondsLeft,
         isLocked         = info and info.isLocked,
@@ -163,6 +165,7 @@ local function BuildSchedulerEntry(ev, poi, source)
         zoneName         = poi.zoneName,
         description      = poi.description,
         tooltipWidgetSet = poi.tooltipWidgetSet,
+        iconWidgetSet    = poi.iconWidgetSet,
         isTimed          = poi.isTimed,
         secondsLeft      = poi.secondsLeft,
         startTime        = ev.startTime,
@@ -193,6 +196,7 @@ local function BuildMapEntry(poiID, info, mapID)
         zoneName         = info.zoneName,
         description      = info.description,
         tooltipWidgetSet = info.tooltipWidgetSet,
+        iconWidgetSet    = info.iconWidgetSet,
         isTimed          = isTimed,
         secondsLeft      = secondsLeft,
         isLocked         = info.isLocked,
@@ -250,6 +254,21 @@ local function Refresh()
         return
     end
 
+    -- Account-wide cache of event names ever observed in the scheduler.
+    -- Drives the "claimed today" heuristic in Core — only scheduler-eligible
+    -- events can be claimable. Without this cache, the heuristic mis-fires on
+    -- non-scheduler map-only events (Void Incursion, A Sea Voidage) which
+    -- are always absent from the scheduler list and would incorrectly render
+    -- with the ✓ annotation.
+    if ns.db then
+        ns.db.schedulerNamesSeen = ns.db.schedulerNamesSeen or {}
+    end
+    local function MarkSchedulerName(name)
+        if name and ns.db and ns.db.schedulerNamesSeen then
+            ns.db.schedulerNamesSeen[name] = true
+        end
+    end
+
     -- 1. Scheduled-currently-firing → active. These carry startTime/endTime
     --    epochs so the tooltip can render a live "Xh Ym left" countdown.
     --    Processed BEFORE Ongoing because Ongoing entries for the same POI
@@ -259,6 +278,7 @@ local function Refresh()
     for _, ev in ipairs(rawScheduled) do
         local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
         if poi then
+            MarkSchedulerName(poi.name)
             local entry = BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
             local st = ev.startTime or 0
             local et = ev.endTime or 0
@@ -284,6 +304,7 @@ local function Refresh()
         if not seen[ev.areaPoiID] then
             local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
             if poi then
+                MarkSchedulerName(poi.name)
                 state.active[#state.active + 1] =
                     BuildSchedulerEntry(ev, poi, "scheduler-ongoing")
                 seen[ev.areaPoiID] = true
