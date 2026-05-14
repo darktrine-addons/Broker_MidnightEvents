@@ -83,6 +83,20 @@ ns.knownEventNames = {
     [8697] = "Void Assaults",
 }
 
+-- Per-POI override for the widget set carrying a StatusBar progress meter.
+-- Used when the POI's own tooltipWidgetSet / iconWidgetSet fields don't
+-- reference the progress widget — either because the POI is in a state
+-- where iws is nil (Void Incursion mid-firing), or because the progress
+-- bar lives in a separately-published widget set the POI doesn't link to.
+--
+-- Discover candidates via /mewidget <N> on the widget set displayed in the
+-- on-map icon overlay (the "X%" you can see floating over the POI). The
+-- right set is the one whose enumeration returns a type-2 (StatusBar)
+-- widget with barMax > 0.
+ns.eventProgressWidgetSet = {
+    [8718] = 2042,  -- Void Incursion: build progress for next firing
+}
+
 -- Lady Liadrin pool member → human-friendly short label. Used by the
 -- tooltip to annotate the Liadrin row with which choice the current char
 -- picked this week (e.g. "Lady Liadrin's Weekly (Delves picked)").

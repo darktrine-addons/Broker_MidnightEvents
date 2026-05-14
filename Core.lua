@@ -98,7 +98,15 @@ local function GetEventProgress(ev)
     end
     local v, m, p = probe(ev.tooltipWidgetSet)
     if v then return v, m, p end
-    return probe(ev.iconWidgetSet)
+    v, m, p = probe(ev.iconWidgetSet)
+    if v then return v, m, p end
+    -- Per-POI override for events whose progress bar lives in a widget set
+    -- not referenced by either tooltipWidgetSet or iconWidgetSet (Void
+    -- Incursion: iws drops to nil mid-firing but widget set 2042 still
+    -- carries the build bar). See ns.eventProgressWidgetSet in Data.lua.
+    local overrideSet = ev.areaPoiID and ns.eventProgressWidgetSet
+                        and ns.eventProgressWidgetSet[ev.areaPoiID]
+    return probe(overrideSet)
 end
 
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
@@ -450,15 +458,27 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
+        -- Long-timer threshold for map-event POIs: many continuous-presence
+        -- POIs (Void Incursion, Void Rift variants) carry a secondsLeft of
+        -- "time until weekly reset" rather than "time left in current firing
+        -- window." Rendering that as "4d 23h left" misleads the player into
+        -- thinking they have ages — better to treat as untimed continuous.
+        local MAP_TIMER_CAP = 12 * 3600
+        local function isLongMapTimer(ev, secs)
+            return ev.source == "map-event"
+                   and secs and secs > MAP_TIMER_CAP
+        end
+
         -- Pre-compute remaining + kind + progress so we can sort, then
-        -- render. Locked "building up" events (Impending Void Incursion)
-        -- without extractable progress are skipped — they're not actionable.
+        -- render. Locked POIs without extractable progress are skipped —
+        -- they're genuinely unavailable (not "building up").
         local rows = {}
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
             local _, _, progPct = GetEventProgress(ev)
-            -- Drop locked events with no progress signal (genuinely
-            -- unavailable POIs, not "building up").
+            if isLongMapTimer(ev, secs) then
+                secs, kind = nil, "ongoing"
+            end
             if not (ev.isLocked and not progPct) then
                 rows[#rows + 1] = {
                     ev = ev, secs = secs, kind = kind, progPct = progPct,
@@ -467,12 +487,12 @@ local function BuildTooltip()
         end
         -- Sort key:
         --   - Untimed "ongoing" continuous events → math.huge (bottom).
-        --   - "Building up" locked events → (100 - pct) * 60 synthetic
-        --     seconds, putting a 94% event near a 6-min countdown — close
-        --     to firing surfaces near the top.
+        --   - Events with progress → (100 - pct) * 60 synthetic seconds,
+        --     putting a 94% event near a 6-min countdown — close-to-firing
+        --     surfaces near the top.
         --   - Everything else → seconds-left ascending.
         local function sortKey(r)
-            if r.ev.isLocked and r.progPct then
+            if r.progPct then
                 return math.max(0, (100 - r.progPct) * 60)
             end
             if r.kind == "ongoing" or not r.secs then return math.huge end
@@ -495,11 +515,12 @@ local function BuildTooltip()
                           or  (ev.name or "Event")
 
             local valueText, vr, vg, vb
-            if ev.isLocked and progPct then
-                -- "Building up" event (Impending Void Incursion). Surface the
-                -- fill % as the timer. Color graded by proximity to firing:
-                --   ≥ 90%   urgent amber — it's about to fire, get there
-                --   ≥ 50%   white       — meaningful progress, worth noting
+            if progPct then
+                -- Progress bar available (Void Incursion build cycle, etc.).
+                -- Render the fill % regardless of isLocked — the bar keeps
+                -- meaning post-firing as the countdown to next firing.
+                --   ≥ 90%   urgent amber — about to fire, get there
+                --   ≥ 50%   white       — meaningful progress
                 --   <  50%  dim cyan    — visible but low-priority
                 valueText = string.format("%d%% built", math.floor(progPct))
                 if progPct >= 90 then
