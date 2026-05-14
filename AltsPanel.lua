@@ -71,15 +71,32 @@ local DEFAULT_BG_ALPHA = 0.6
 
 -- Apply the background opacity from db.altsPanel.bgAlpha to the panel's
 -- backing textures. Called at panel creation and again on settings change.
--- Targets only background art (the frame's main Bg + the inset Bg) so text,
--- icons, and the title bar stay fully opaque and readable.
+--
+-- BasicFrameTemplateWithInset has its dark body backing inside Inset's
+-- nine-slice (not a single named .Bg field), so iterate every texture
+-- region on both the outer frame and the Inset frame and alpha them.
+-- FontStrings + child Frames (scroll content, rows) are unaffected, so
+-- text and icons stay fully opaque.
+local function alphaTextures(frame, alpha)
+    if not frame then return end
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region.IsObjectType and region:IsObjectType("Texture") then
+            region:SetAlpha(alpha)
+        end
+    end
+end
+
 local function ApplyBackgroundAlpha(f)
     if not f then return end
     local alpha = (ns.db and ns.db.altsPanel and ns.db.altsPanel.bgAlpha)
                   or DEFAULT_BG_ALPHA
-    if f.Bg          then f.Bg:SetAlpha(alpha)          end
-    if f.Inset and f.Inset.Bg then f.Inset.Bg:SetAlpha(alpha) end
-    if f.TitleBg     then f.TitleBg:SetAlpha(alpha)     end
+    alphaTextures(f, alpha)
+    alphaTextures(f.Inset, alpha)
+    -- NineSlice mixin (used by Inset) keeps its border art on a child frame
+    -- named NineSlice; iterate it too so the body really lets the world
+    -- behind show through.
+    if f.NineSlice       then alphaTextures(f.NineSlice, alpha)       end
+    if f.Inset and f.Inset.NineSlice then alphaTextures(f.Inset.NineSlice, alpha) end
 end
 
 function ns.AltsPanel.RefreshBackground()
