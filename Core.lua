@@ -849,7 +849,7 @@ local function BuildTooltip()
 
             for _, w in ipairs(ns.weeklies or {}) do
                 local done = weeklyDoneCount[w.key] or 0
-                Tooltip:AddDoubleLine(w.short or w.label,
+                Tooltip:AddDoubleLine(w.label or w.short,
                     done .. "/" .. activeCount .. " done",
                     CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
             end

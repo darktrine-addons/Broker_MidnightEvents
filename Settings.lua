@@ -115,10 +115,13 @@ sf:SetScript("OnEvent", function(self, event, name)
     ns.char = char
 
     -- Phase 8: Alts detail panel geometry. Lazily applied when the panel
-    -- first opens; persisted on drag-stop.
+    -- first opens; persisted on drag-stop. bgAlpha controls the panel's
+    -- background-texture opacity (0.6 by default — slightly transparent so
+    -- the world behind stays partly visible, like a tooltip).
     db.altsPanel = db.altsPanel or {
         point = "CENTER", x = 0, y = 0,
     }
+    if db.altsPanel.bgAlpha == nil then db.altsPanel.bgAlpha = 0.6 end
 
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state.
@@ -191,6 +194,25 @@ sf:SetScript("OnEvent", function(self, event, name)
     brokerEventSetting:SetValueChangedCallback(RefreshUI)
     Settings.CreateCheckbox(category, brokerEventSetting,
         "Append the next-firing event (e.g. \"Abundance in 23m\") to the broker bar text.")
+
+    -- Section: Alts panel
+    Settings.RegisterInitializer(category,
+        CreateSettingsListSectionHeaderInitializer("Alts panel", nil))
+
+    local altsAlphaSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_altsPanelBgAlpha", "bgAlpha", db.altsPanel,
+        Settings.VarType.Number, "Background opacity", 0.6)
+    altsAlphaSetting:SetValueChangedCallback(function()
+        if ns.AltsPanel and ns.AltsPanel.RefreshBackground then
+            ns.AltsPanel.RefreshBackground()
+        end
+    end)
+    local sliderOptions = Settings.CreateSliderOptions(0.1, 1.0, 0.05)
+    sliderOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
+        function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
+    Settings.CreateSlider(category, altsAlphaSetting, sliderOptions,
+        "Background opacity for the detached Alts panel (Shift-RightClick on the broker). "
+        .. "Lower = more see-through.")
 
     Settings.RegisterAddOnCategory(category)
     ns.settingsCategoryID = category:GetID()

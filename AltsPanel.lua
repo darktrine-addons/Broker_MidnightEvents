@@ -46,20 +46,44 @@ end
 -- Build the active column list. Boss + ns.weeklies in declared order, gated
 -- by db.showWorldBosses. Mirrors the tooltip's "This Week" row order so the
 -- panel reads as a transposed version of the same data.
+-- `short` is the header cell text; `label` is the full name shown on the
+-- header-cell hover tooltip (so the abbreviations stay decipherable).
 local function GetColumns()
     local cols = {}
     local showWB = not ns.db or ns.db.showWorldBosses ~= false
     if showWB then
-        cols[#cols + 1] = { key = "_boss", short = "Boss", kind = "boss" }
+        cols[#cols + 1] = {
+            key = "_boss", short = "Boss", label = "World Boss", kind = "boss",
+        }
     end
     for _, w in ipairs(ns.weeklies or {}) do
         cols[#cols + 1] = {
             key   = w.key,
             short = w.short or w.label or w.key,
+            label = w.label or w.short or w.key,
             kind  = "weekly",
         }
     end
     return cols
+end
+
+local DEFAULT_BG_ALPHA = 0.6
+
+-- Apply the background opacity from db.altsPanel.bgAlpha to the panel's
+-- backing textures. Called at panel creation and again on settings change.
+-- Targets only background art (the frame's main Bg + the inset Bg) so text,
+-- icons, and the title bar stay fully opaque and readable.
+local function ApplyBackgroundAlpha(f)
+    if not f then return end
+    local alpha = (ns.db and ns.db.altsPanel and ns.db.altsPanel.bgAlpha)
+                  or DEFAULT_BG_ALPHA
+    if f.Bg          then f.Bg:SetAlpha(alpha)          end
+    if f.Inset and f.Inset.Bg then f.Inset.Bg:SetAlpha(alpha) end
+    if f.TitleBg     then f.TitleBg:SetAlpha(alpha)     end
+end
+
+function ns.AltsPanel.RefreshBackground()
+    ApplyBackgroundAlpha(panel)
 end
 
 -- ── Frame plumbing ────────────────────────────────────────────────────────────
@@ -164,20 +188,43 @@ local function PopulateRow(row, charKey, char, columns, currentWeeklyReset)
     HideExcessCells(row, #columns)
 end
 
+-- Header-cell hover shows the full column label, so the abbreviations stay
+-- decipherable without crowding the row. Uses the shared GameTooltip because
+-- we're rendering static strings — no protected-data round-trip, no taint
+-- containment needed.
+local function HeaderCellOnEnter(self)
+    if not self.fullLabel then return end
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText(self.fullLabel)
+    GameTooltip:Show()
+end
+local function HeaderCellOnLeave()
+    GameTooltip:Hide()
+end
+
 local function RenderHeader(columns)
     panel.header:SetWidth(FRAME_WIDTH - 24)
     panel.header.nameLabel:SetText("Char")
     for i, col in ipairs(columns) do
-        if not panel.header.cells[i] then
-            local fs = panel.header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-            fs:SetPoint("LEFT", panel.header, "LEFT", NAME_WIDTH + (i - 1) * CELL_WIDTH, 0)
-            fs:SetWidth(CELL_WIDTH)
+        local cell = panel.header.cells[i]
+        if not cell then
+            cell = CreateFrame("Frame", nil, panel.header)
+            cell:SetSize(CELL_WIDTH, HEADER_HEIGHT)
+            cell:SetPoint("LEFT", panel.header, "LEFT",
+                          NAME_WIDTH + (i - 1) * CELL_WIDTH, 0)
+            local fs = cell:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+            fs:SetAllPoints()
             fs:SetJustifyH("CENTER")
-            panel.header.cells[i] = fs
+            cell.text = fs
+            cell:EnableMouse(true)
+            cell:SetScript("OnEnter", HeaderCellOnEnter)
+            cell:SetScript("OnLeave", HeaderCellOnLeave)
+            panel.header.cells[i] = cell
         end
-        panel.header.cells[i]:SetText(col.short)
-        panel.header.cells[i]:SetTextColor(0.7, 0.85, 0.85)
-        panel.header.cells[i]:Show()
+        cell.text:SetText(col.short)
+        cell.text:SetTextColor(0.7, 0.85, 0.85)
+        cell.fullLabel = col.label ~= col.short and col.label or nil
+        cell:Show()
     end
     for i = #columns + 1, #panel.header.cells do
         panel.header.cells[i]:Hide()
@@ -281,6 +328,8 @@ local function CreatePanel()
 
     f.scroll  = scroll
     f.content = content
+
+    ApplyBackgroundAlpha(f)
     return f
 end
 
