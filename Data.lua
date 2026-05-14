@@ -97,6 +97,57 @@ ns.eventProgressWidgetSet = {
     [8718] = 2042,  -- Void Incursion: build progress for next firing
 }
 
+-- Per-POI heuristic for detecting "main event firing RIGHT NOW." The
+-- C_UIWidgetManager / C_AreaPoiInfo / C_EventScheduler APIs don't expose
+-- a direct firing flag for these events, so where we have a reliable
+-- *empirical* bar-behaviour pattern, we encode it here.
+--
+-- Why this lives here (vs. inline in Core): rules are content-tuned and
+-- expected to drift on balance patches. Keeping them in Data.lua matches
+-- the "edit this on new patches" convention already established for
+-- knownEventNames and waveCadence. Auditable, easy to extend with new
+-- POIs, easy to retune thresholds.
+--
+-- Schema:
+--   [areaPoiID] = {
+--       type      = "lowProgress",   -- see types below
+--       threshold = number,           -- meaning depends on type
+--       comment   = "string",         -- empirical basis + caveats
+--   }
+--
+-- Types:
+--   "lowProgress" — firing iff progPct exists and progPct < threshold.
+--                   Used for events whose build bar resets at fire-trigger
+--                   and where firing concludes by the time the bar passes
+--                   the threshold on its rebuild. Will false-positive in
+--                   the brief post-weekly-reset window before the bar
+--                   first crosses the threshold; tolerated as low-impact.
+--
+-- Brittle by design. Re-verify on content patches by probing /mewidget
+-- against the relevant widget set while observing the in-zone event state.
+ns.eventFiringHeuristic = {
+    [8718] = {  -- Void Incursion
+        type = "lowProgress", threshold = 10,
+        comment = "Bar resets at major-attack trigger; firing observed to "
+               .. "conclude by ~10% rebuild. 2-sample empirical "
+               .. "(2026-05-14): bar at 8.35% and ~10% both during "
+               .. "confirmed-firing states. Brief false positives after "
+               .. "weekly reset until bar crosses 10%.",
+    },
+}
+
+-- Resolve a firing heuristic for an event entry. Returns true iff the
+-- POI has a heuristic and its condition is satisfied right now.
+function ns.IsEventFiring(areaPoiID, progPct)
+    local rule = areaPoiID and ns.eventFiringHeuristic
+                 and ns.eventFiringHeuristic[areaPoiID]
+    if not rule then return false end
+    if rule.type == "lowProgress" then
+        return progPct ~= nil and progPct < rule.threshold
+    end
+    return false
+end
+
 -- Lady Liadrin pool member → human-friendly short label. Used by the
 -- tooltip to annotate the Liadrin row with which choice the current char
 -- picked this week (e.g. "Lady Liadrin's Weekly (Delves picked)").

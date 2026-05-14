@@ -476,22 +476,27 @@ local function BuildTooltip()
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
             local _, _, progPct = GetEventProgress(ev)
+            local firing = ns.IsEventFiring
+                           and ns.IsEventFiring(ev.areaPoiID, progPct)
             if isLongMapTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
             if not (ev.isLocked and not progPct) then
                 rows[#rows + 1] = {
-                    ev = ev, secs = secs, kind = kind, progPct = progPct,
+                    ev = ev, secs = secs, kind = kind,
+                    progPct = progPct, firing = firing,
                 }
             end
         end
         -- Sort key:
-        --   - Untimed "ongoing" continuous events → math.huge (bottom).
+        --   - Firing events → -1 (pinned to the very top, ahead of every
+        --     countdown — they have a name to live up to).
         --   - Events with progress → (100 - pct) * 60 synthetic seconds,
-        --     putting a 94% event near a 6-min countdown — close-to-firing
-        --     surfaces near the top.
+        --     putting a 94% event near a 6-min countdown.
+        --   - Untimed "ongoing" continuous events → math.huge (bottom).
         --   - Everything else → seconds-left ascending.
         local function sortKey(r)
+            if r.firing then return -1 end
             if r.progPct then
                 return math.max(0, (100 - r.progPct) * 60)
             end
@@ -509,13 +514,19 @@ local function BuildTooltip()
             local secs    = r.secs
             local kind    = r.kind
             local progPct = r.progPct
+            local firing  = r.firing
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
 
             local valueText, vr, vg, vb
-            if progPct then
+            if firing then
+                -- Empirical firing detector (see ns.eventFiringHeuristic
+                -- in Data.lua). Highest-urgency rendering: amber + caps to
+                -- pull the eye. Player should rush to the POI.
+                valueText, vr, vg, vb = "FIRING NOW!", CH_r, CH_g, CH_b
+            elseif progPct then
                 -- Progress bar available (Void Incursion build cycle, etc.).
                 -- Render the fill % regardless of isLocked — the bar keeps
                 -- meaning post-firing as the countdown to next firing.
