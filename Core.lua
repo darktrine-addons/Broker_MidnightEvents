@@ -1042,6 +1042,51 @@ local WIDGET_INFO_FNS = C_UIWidgetManager and {
     [27] = C_UIWidgetManager.GetTextColumnRowVisualizationInfo,
 } or {}
 
+-- Dev diagnostic: dump every event-atlas POI from the continent map AND from
+-- each Midnight zone map, with the fields that decide whether Refresh() picks
+-- it up. Used to figure out why a known-visible POI (e.g. Impending Void
+-- Incursion) doesn't show in the Now section — typical causes are:
+--   - POI is zone-scoped only; continent map's GetEventsForMap doesn't return
+--     it (zone scans below WILL find it)
+--   - atlas doesn't match ^ui-eventpoi- so LooksLikeEventAtlas filters it
+--   - isCurrentEvent is false even though the POI is rendered
+local MIDNIGHT_ZONE_IDS = { 2395, 2405, 2413, 2437, 2424, 2393 }
+
+SLASH_BMEPOIS1 = "/mepois"
+SlashCmdList.BMEPOIS = function()
+    if not (C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap
+            and C_AreaPoiInfo.GetAreaPOIInfo) then
+        print("|cffffcc00MidnightEvents|r — C_AreaPoiInfo unavailable")
+        return
+    end
+    local continentMapID = ns.Events and ns.Events.GetContinentMapID() or 2537
+    local function dumpMap(mapID, label)
+        local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
+        print(string.format("|cffffcc00MidnightEvents|r %s map=%d  events=%d",
+            label, mapID, #ids))
+        for _, poiID in ipairs(ids) do
+            local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+            if info then
+                local timed = C_AreaPoiInfo.IsAreaPOITimed
+                              and C_AreaPoiInfo.IsAreaPOITimed(poiID) or false
+                print(string.format(
+                    "  poi=%d  cur=%s lock=%s timed=%s  atlas=%s  name=%s  ws=%s",
+                    poiID,
+                    tostring(info.isCurrentEvent), tostring(info.isLocked),
+                    tostring(timed),
+                    tostring(info.atlasName), tostring(info.name),
+                    tostring(info.tooltipWidgetSet)))
+            else
+                print(string.format("  poi=%d  (no info)", poiID))
+            end
+        end
+    end
+    dumpMap(continentMapID, "continent")
+    for _, mid in ipairs(MIDNIGHT_ZONE_IDS) do
+        dumpMap(mid, "zone")
+    end
+end
+
 SLASH_BMEWIDGET1 = "/mewidget"
 SlashCmdList.BMEWIDGET = function(msg)
     if not C_UIWidgetManager then

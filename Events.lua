@@ -173,7 +173,7 @@ local function BuildSchedulerEntry(ev, poi, source)
     }
 end
 
-local function BuildMapEntry(poiID, info)
+local function BuildMapEntry(poiID, info, mapID)
     -- Query timing live for map-event POIs. Many of these are actually
     -- timed (Abundance events whose scheduler entry got filtered out for
     -- this char post-reward-claim — the POI stays visible on the map and
@@ -196,6 +196,7 @@ local function BuildMapEntry(poiID, info)
         isTimed          = isTimed,
         secondsLeft      = secondsLeft,
         isLocked         = info.isLocked,
+        mapID            = mapID,
     }
 end
 
@@ -291,11 +292,22 @@ local function Refresh()
         end
     end
 
-    -- 3. Continuous map-event POIs on the continent map → active.
+    -- 3. Continuous map-event POIs → active. Scan the continent map FIRST
+    --    (so continent-canonical entries beat zone duplicates in the dedup),
+    --    then each Midnight zone map.
+    --
+    --    Zone scans are mandatory: many event POIs (Void Incursion, Abyss
+    --    Anglers, A Sea Voidage, Prey, zone-copy of Stormarion/Haranir) only
+    --    register at zone level — GetEventsForMap on the continent returns
+    --    just Abundance for a typical week. Without zone scans the Now
+    --    section would be empty for every char who hasn't claimed Abundance.
+    --
     --    Filter to event atlases + currently-active POIs. Dedup against
     --    scheduler entries via BOTH the areaPoiID seen[] set AND seenNames[]
     --    (scheduler and continent map use different POI IDs for the same
-    --    underlying event — name is the canonical key).
+    --    underlying event — name is the canonical key). The same zone POI
+    --    can appear on multiple zone maps (Void Incursion sits on 2395,
+    --    2413, AND 2437); poiID dedup handles that.
     --
     --    isLocked is preserved on the entry but NOT used as a filter:
     --    "building up" events (Impending Void Incursion) show as locked
@@ -304,19 +316,25 @@ local function Refresh()
     --    location. The Now-section renderer skips locked events that have
     --    no extractable progress data (covers genuinely-unavailable POIs).
     if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
-        local mapID = state.continentMapID
-        local ids   = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
-        for _, poiID in ipairs(ids) do
-            if not seen[poiID] then
-                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
-                if info and info.isCurrentEvent
-                   and LooksLikeEventAtlas(info.atlasName)
-                   and not (info.name and seenNames[info.name]) then
-                    state.active[#state.active + 1] = BuildMapEntry(poiID, info)
-                    seen[poiID] = true
-                    if info.name then seenNames[info.name] = true end
+        local function scanMap(mapID)
+            local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
+            for _, poiID in ipairs(ids) do
+                if not seen[poiID] then
+                    local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+                    if info and info.isCurrentEvent
+                       and LooksLikeEventAtlas(info.atlasName)
+                       and not (info.name and seenNames[info.name]) then
+                        state.active[#state.active + 1] =
+                            BuildMapEntry(poiID, info, mapID)
+                        seen[poiID] = true
+                        if info.name then seenNames[info.name] = true end
+                    end
                 end
             end
+        end
+        scanMap(state.continentMapID)
+        for _, zoneMapID in ipairs(MIDNIGHT_ZONES) do
+            scanMap(zoneMapID)
         end
     end
 
