@@ -279,23 +279,38 @@ local function Refresh()
         end
     end
 
-    -- 2. Scheduler scheduled → upcoming. Entries describe NEXT firings, not
-    --    currently-firing events: each entry's startTime is when its variant
-    --    next fires (per the Blizz Events panel "Event Schedule" rendering).
+    -- 2. Scheduler scheduled → split into active + upcoming based on the
+    --    entry's window. startTime/endTime frame each variant's claim
+    --    window (Abundance variants run 8h each; Void Assaults runs the
+    --    whole week). Per /mesched + Blizz panel cross-check (2026-05-14):
     --
-    --    Entries with startTime in the past are rotation window artifacts —
-    --    Blizz seems to keep the LAST firing's entry around with endTime
-    --    extended to the NEXT firing's start, framing a "current rotation
-    --    window." That entry is NOT actually firing (the Blizz events panel
-    --    doesn't render it as ongoing either). The genuinely-firing variant
-    --    comes through the map-event scan below with the right name + timer.
-    --    Skipping past-start entries entirely avoids the misclassification.
+    --      startTime <= now < endTime → currently FIRING (the variant the
+    --                                    Blizz panel highlights, the player
+    --                                    can claim its reward right now)
+    --      startTime > now            → upcoming, sorted ascending
+    --      endTime  <= now            → stale rotation entry, drop
+    --
+    --    An earlier theory treated past-start entries as "rotation
+    --    artifacts" and dropped them — that was wrong. Those entries are
+    --    the genuinely-active variant. Skipping them meant the Now section
+    --    silently omitted whichever Abundance variant was currently firing
+    --    while the misleading map-event POI for the *next* variant snuck
+    --    in with a rotation-timer "X left" instead.
     local rawScheduled = C_EventScheduler.GetScheduledEvents
                          and C_EventScheduler.GetScheduledEvents() or {}
     for _, ev in ipairs(rawScheduled) do
-        if ev.startTime and ev.startTime > now then
-            local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
-            if poi then
+        local st = ev.startTime or 0
+        local et = ev.endTime or 0
+        local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
+        if poi then
+            if st <= now and et > now then
+                if not seen[ev.areaPoiID] then
+                    state.active[#state.active + 1] =
+                        BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
+                    seen[ev.areaPoiID] = true
+                    if poi.name then seenNames[poi.name] = true end
+                end
+            elseif st > now then
                 state.upcoming[#state.upcoming + 1] =
                     BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
             end

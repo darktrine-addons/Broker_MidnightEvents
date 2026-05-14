@@ -488,27 +488,30 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        -- Threshold model for map-event POI timers:
-        --   * MAP_TIMER_CAP (12h): treat as untimed continuous — the
-        --     secondsLeft is almost certainly "time until weekly reset" on
-        --     a continuous-presence POI (Void Incursion / Rift variants),
-        --     not a fire-window timer.
-        --   * FIRE_WINDOW (2h): if secondsLeft is between FIRE_WINDOW and
-        --     MAP_TIMER_CAP AND the POI has no progress widget, it's a
-        --     between-firings rotation timer (Abundance variants sitting
-        --     on the map with "next firing in 6h" countdowns). Drop these
-        --     from Now entirely — Blizz's events panel doesn't render them
-        --     as ongoing either, and they'll reappear in Upcoming via the
-        --     scheduler. Mining Voidburrow at 42m (< FIRE_WINDOW) stays.
-        local MAP_TIMER_CAP = 12 * 3600
-        local FIRE_WINDOW   =  2 * 3600
-        local function isLongMapTimer(ev, secs)
-            return ev.source == "map-event"
-                   and secs and secs > MAP_TIMER_CAP
+        -- Threshold model for currently-active event timers:
+        --   * LONG_TIMER_CAP (12h): treat as untimed continuous regardless
+        --     of source. Catches both map-event "time-until-weekly-reset"
+        --     timers (Void Incursion / Rift variants) AND scheduler-active
+        --     entries with week-long windows (Void Assaults: active until
+        --     +7078m). Both render as "active" instead of misleading
+        --     multi-day countdowns.
+        --   * FIRE_WINDOW (2h): map-event POIs whose secondsLeft is between
+        --     FIRE_WINDOW and LONG_TIMER_CAP AND have no progress widget
+        --     are between-firings rotation timers (Abundance variants
+        --     sitting on the map with "next firing in 6h" countdowns).
+        --     Drop them from Now — the scheduler-scheduled-active branch
+        --     surfaces the genuinely-firing variant with the right timer.
+        --     Restricted to map-event source because scheduler entries with
+        --     timers in this range are legit fire windows (Skinning Den
+        --     active for 8h is real, not rotation noise).
+        local LONG_TIMER_CAP = 12 * 3600
+        local FIRE_WINDOW    =  2 * 3600
+        local function isLongTimer(ev, secs)
+            return secs and secs > LONG_TIMER_CAP
         end
         local function isBetweenFirings(ev, secs, progPct)
             return ev.source == "map-event"
-                   and secs and secs > FIRE_WINDOW and secs <= MAP_TIMER_CAP
+                   and secs and secs > FIRE_WINDOW and secs <= LONG_TIMER_CAP
                    and not progPct
         end
 
@@ -521,7 +524,7 @@ local function BuildTooltip()
             local _, _, progPct = GetEventProgress(ev)
             local firing = ns.IsEventFiring
                            and ns.IsEventFiring(ev.areaPoiID, progPct)
-            if isLongMapTimer(ev, secs) then
+            if isLongTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
             local skip = (ev.isLocked and not progPct)
