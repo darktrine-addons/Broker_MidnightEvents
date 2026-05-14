@@ -254,61 +254,50 @@ local function Refresh()
         return
     end
 
-    -- Account-wide cache of event names ever observed in the scheduler.
-    -- Drives the "claimed today" heuristic in Core — only scheduler-eligible
-    -- events can be claimable. Without this cache, the heuristic mis-fires on
-    -- non-scheduler map-only events (Void Incursion, A Sea Voidage) which
-    -- are always absent from the scheduler list and would incorrectly render
-    -- with the ✓ annotation.
-    if ns.db then
-        ns.db.schedulerNamesSeen = ns.db.schedulerNamesSeen or {}
-    end
-    local function MarkSchedulerName(name)
-        if name and ns.db and ns.db.schedulerNamesSeen then
-            ns.db.schedulerNamesSeen[name] = true
-        end
+    -- One-shot cleanup of stale account-wide cache from the old
+    -- absence-as-claimed heuristic (now removed). Safe to drop unconditionally
+    -- — nothing in the current code reads from it.
+    if ns.db and ns.db.schedulerNamesSeen ~= nil then
+        ns.db.schedulerNamesSeen = nil
     end
 
-    -- 1. Scheduled-currently-firing → active. These carry startTime/endTime
-    --    epochs so the tooltip can render a live "Xh Ym left" countdown.
-    --    Processed BEFORE Ongoing because Ongoing entries for the same POI
-    --    lack endTime — using them would lose the countdown info.
-    local rawScheduled = C_EventScheduler.GetScheduledEvents
-                         and C_EventScheduler.GetScheduledEvents() or {}
-    for _, ev in ipairs(rawScheduled) do
-        local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
-        if poi then
-            MarkSchedulerName(poi.name)
-            local entry = BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
-            local st = ev.startTime or 0
-            local et = ev.endTime or 0
-            if st <= now and et > now then
-                if not seen[ev.areaPoiID] then
-                    state.active[#state.active + 1] = entry
-                    seen[ev.areaPoiID] = true
-                    if poi.name then seenNames[poi.name] = true end
-                end
-            elseif st > now then
-                state.upcoming[#state.upcoming + 1] = entry
-            end
-        end
-    end
-
-    -- 2. Scheduler ongoing → active. Picks up persistent events that the
-    --    scheduler doesn't put in the Scheduled list (Stormarion Assault,
-    --    Legends of the Haranir). Dedup against scheduler-scheduled keeps
-    --    the priority right.
+    -- 1. Scheduler ongoing → active. Persistent events the scheduler keeps
+    --    in the Ongoing list (Stormarion Assault, Legends of the Haranir,
+    --    Void Assaults). These don't carry an endTime — countdowns for these
+    --    come from wave-cadence overrides or IsAreaPOITimed/GetAreaPOISecondsLeft.
     local rawOngoing = C_EventScheduler.GetOngoingEvents
                        and C_EventScheduler.GetOngoingEvents() or {}
     for _, ev in ipairs(rawOngoing) do
         if not seen[ev.areaPoiID] then
             local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
             if poi then
-                MarkSchedulerName(poi.name)
                 state.active[#state.active + 1] =
                     BuildSchedulerEntry(ev, poi, "scheduler-ongoing")
                 seen[ev.areaPoiID] = true
                 if poi.name then seenNames[poi.name] = true end
+            end
+        end
+    end
+
+    -- 2. Scheduler scheduled → upcoming. Entries describe NEXT firings, not
+    --    currently-firing events: each entry's startTime is when its variant
+    --    next fires (per the Blizz Events panel "Event Schedule" rendering).
+    --
+    --    Entries with startTime in the past are rotation window artifacts —
+    --    Blizz seems to keep the LAST firing's entry around with endTime
+    --    extended to the NEXT firing's start, framing a "current rotation
+    --    window." That entry is NOT actually firing (the Blizz events panel
+    --    doesn't render it as ongoing either). The genuinely-firing variant
+    --    comes through the map-event scan below with the right name + timer.
+    --    Skipping past-start entries entirely avoids the misclassification.
+    local rawScheduled = C_EventScheduler.GetScheduledEvents
+                         and C_EventScheduler.GetScheduledEvents() or {}
+    for _, ev in ipairs(rawScheduled) do
+        if ev.startTime and ev.startTime > now then
+            local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
+            if poi then
+                state.upcoming[#state.upcoming + 1] =
+                    BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
             end
         end
     end

@@ -265,54 +265,6 @@ local function CurrentDailyResetEpoch()
     return nil
 end
 
--- Set of event names the scheduler API is *currently firing* on this char
--- (Ongoing list + currently-active Scheduled). Drives the "claimed today"
--- heuristic — Future firings deliberately excluded: when the player claims
--- today's Herbalism Grotto, scheduler still returns its future firings (in
--- 17h, 41h, etc.) but stops including the current firing. The current
--- firing's name disappearing from this set is exactly the signal we want.
-local function CurrentSchedulerNames()
-    local set = {}
-    if not ns.Events then return set end
-    for _, ev in ipairs(ns.Events.GetActive()) do
-        if ev.name and (ev.source == "scheduler-ongoing"
-                        or ev.source == "scheduler-scheduled") then
-            set[ev.name] = true
-        end
-    end
-    return set
-end
-
--- Heuristic test: is this event entry presumed to be claimed today by the
--- current char?
---
---   ev.source == "map-event"     — comes via map scan, not scheduler
---   ev.isTimed                   — finite firing window (rules out untimed
---                                   continuous POIs like Prey, Haranir)
---   ev.name in schedulerNamesSeen — name has been observed in the scheduler
---                                   list at some point (account-wide); rules
---                                   out always-map-only events (Void
---                                   Incursion, A Sea Voidage, Abyss Anglers)
---                                   which are never scheduler-eligible and
---                                   would otherwise false-positive claimed
---   not current[ev.name]         — scheduler is currently filtering it out
---
--- All four together: a scheduler-eligible event stopped being returned by
--- the scheduler for this char, but it's still visible on the world map.
--- That's the disappearance-as-completion signal Blizzard's API gives us.
---
--- Works cold (player logs in already-claimed). schedulerNamesSeen is
--- populated lazily in Events.lua Refresh — first observation of any
--- scheduler entry on any char locks the name in as claimable.
-local function IsLikelyClaimed(ev, currentScheduler)
-    if ev.source ~= "map-event" or not ev.isTimed or not ev.name then
-        return false
-    end
-    if currentScheduler[ev.name] then return false end
-    local seen = ns.db and ns.db.schedulerNamesSeen
-    return seen ~= nil and seen[ev.name] == true
-end
-
 -- Reconcile char.bountifulSeen with the live Events list. Wipe on daily
 -- reset; otherwise additive. Currently-visible bountifuls get cached so
 -- they survive disappearing from the live list (the user-visible signal
@@ -476,7 +428,6 @@ local function BuildTooltip()
     Tooltip:AddLine("Midnight Events", CV_r, CV_g, CV_b)
 
     local now = time()
-    local currentScheduler = CurrentSchedulerNames()
     local CHECK = "|A:common-icon-checkmark:14:14|a"
 
     -- ── Section: Now ──────────────────────────────────────────────────────────
@@ -543,12 +494,6 @@ local function BuildTooltip()
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
 
-            -- Scheduler-filtered events surface via the continent-map
-            -- branch with source="map-event". Heuristic: a timed map-event
-            -- whose name isn't in the current scheduler view is presumed
-            -- claimed today on this char. Works cold (no session cache).
-            local isClaimed = IsLikelyClaimed(ev, currentScheduler)
-
             local valueText, vr, vg, vb
             if ev.isLocked and progPct then
                 -- "Building up" event (Impending Void Incursion). Surface the
@@ -588,15 +533,6 @@ local function BuildTooltip()
                 else
                     vr, vg, vb = CV_r, CV_g, CV_b
                 end
-            end
-
-            -- "Claimed today" override: dim the label + value, append the
-            -- checkmark to the value. Player can still see the row (event
-            -- is still playable for other rewards) but knows the per-event
-            -- bonus is already collected for this char.
-            if isClaimed then
-                vr, vg, vb = 0.55, 0.85, 0.55  -- green, like a ✓ row
-                valueText = CHECK .. " " .. valueText
             end
 
             Tooltip:AddDoubleLine(label, valueText, CV_r, CV_g, CV_b, vr, vg, vb)
