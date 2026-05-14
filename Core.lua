@@ -6,6 +6,10 @@
 local addonName, ns = ...
 
 local addonVersion = C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"
+-- The BigWigs packager substitutes @project-version@ at build time. In a raw
+-- source checkout the literal placeholder reaches us instead; show "dev" so
+-- the tooltip footer reads "v dev" rather than "v@project-version@".
+if addonVersion:sub(1, 1) == "@" then addonVersion = "dev" end
 
 local LDB = LibStub("LibDataBroker-1.1")
 local broker = LDB:NewDataObject("Broker_MidnightEvents", {
