@@ -435,8 +435,16 @@ local function BuildTooltip()
 
     -- ── Section: Now ──────────────────────────────────────────────────────────
     -- Events currently firing (scheduler ongoing + currently-active scheduled
-    -- + continuous map-event POIs). Order: insertion order from ns.Events,
-    -- which puts scheduler entries before map-event entries.
+    -- + continuous map-event POIs). Sort: most-time-sensitive first.
+    --
+    --   1. Timed events expiring soonest (ascending by seconds-left)
+    --   2. Wave countdowns (Stormarion's "next in Xm")
+    --   3. Untimed "ongoing" continuous events (Stormarion when between
+    --      waves, Legends of the Haranir) — always available, low urgency,
+    --      sink to the bottom of the section.
+    --
+    -- The user's eye lands on the most urgent / expiring thing first; the
+    -- always-on "go do it whenever" events stay visible but de-prioritised.
     if SectionEnabled("now") then
     Tooltip:AddLine(" ")
     Tooltip:AddLine("Now", CL_r, CL_g, CL_b)
@@ -445,8 +453,29 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
+        -- Pre-compute remaining + kind so we can sort, then render.
+        local rows = {}
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
+            rows[#rows + 1] = { ev = ev, secs = secs, kind = kind }
+        end
+        -- Sort key: untimed "ongoing" → math.huge (sink to bottom). Others
+        -- by secs ascending (smallest remaining first). Stable secondary
+        -- sort by name keeps adjacent rows in a deterministic order.
+        local function sortKey(r)
+            if r.kind == "ongoing" or not r.secs then return math.huge end
+            return r.secs
+        end
+        table.sort(rows, function(a, b)
+            local ka, kb = sortKey(a), sortKey(b)
+            if ka == kb then return (a.ev.name or "") < (b.ev.name or "") end
+            return ka < kb
+        end)
+
+        for _, r in ipairs(rows) do
+            local ev   = r.ev
+            local secs = r.secs
+            local kind = r.kind
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
@@ -906,5 +935,90 @@ SlashCmdList.BMESCHED = function()
                                 math.floor(((ev.endTime or 0) - time()) / 60))
         print(string.format("  [%d] poi=%d  start %s  %s",
             i, ev.areaPoiID, when, resolveName(ev.areaPoiID)))
+    end
+end
+
+-- Dev diagnostic: dump every widget in a UIWidgetSet, with the type-specific
+-- visualization-info call for each. Used to figure out what fields a given
+-- event's tooltipWidgetSet exposes (Impending Void Incursion progress %,
+-- Stormarion wave counter, Abundance Shards counter, etc.) so the right
+-- field can be wired into the Now-section rendering.
+--
+--   /mewidget 2042       — Impending Void Incursion
+--   /mewidget 1795       — Stormarion Assault
+--   /mewidget 1900       — Abundance variants
+--
+-- Type table per Enum.UIWidgetVisualizationType.
+local WIDGET_TYPE_NAMES = {
+    [0]  = "IconAndText",
+    [1]  = "CaptureBar",
+    [2]  = "StatusBar",
+    [3]  = "DoubleStatusBar",
+    [4]  = "IconTextAndBackground",
+    [5]  = "DoubleIconAndText",
+    [6]  = "StackedResourceTracker",
+    [7]  = "IconTextAndCurrencies",
+    [8]  = "TextWithState",
+    [9]  = "HorizontalCurrencies",
+    [10] = "BulletTextList",
+    [22] = "Spell",
+    [27] = "TextColumnRow",
+}
+
+local WIDGET_INFO_FNS = C_UIWidgetManager and {
+    [0]  = C_UIWidgetManager.GetIconAndTextWidgetVisualizationInfo,
+    [1]  = C_UIWidgetManager.GetCaptureBarWidgetVisualizationInfo,
+    [2]  = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo,
+    [3]  = C_UIWidgetManager.GetDoubleStatusBarWidgetVisualizationInfo,
+    [4]  = C_UIWidgetManager.GetIconTextAndBackgroundWidgetVisualizationInfo,
+    [5]  = C_UIWidgetManager.GetDoubleIconAndTextWidgetVisualizationInfo,
+    [6]  = C_UIWidgetManager.GetStackedResourceTrackerWidgetVisualizationInfo,
+    [7]  = C_UIWidgetManager.GetIconTextAndCurrenciesWidgetVisualizationInfo,
+    [8]  = C_UIWidgetManager.GetTextWithStateWidgetVisualizationInfo,
+    [9]  = C_UIWidgetManager.GetHorizontalCurrenciesWidgetVisualizationInfo,
+    [10] = C_UIWidgetManager.GetBulletTextListWidgetVisualizationInfo,
+    [22] = C_UIWidgetManager.GetSpellDisplayVisualizationInfo,
+    [27] = C_UIWidgetManager.GetTextColumnRowVisualizationInfo,
+} or {}
+
+SLASH_BMEWIDGET1 = "/mewidget"
+SlashCmdList.BMEWIDGET = function(msg)
+    if not C_UIWidgetManager then
+        print("|cffffcc00MidnightEvents|r — C_UIWidgetManager unavailable")
+        return
+    end
+    local setID = tonumber(msg and msg:match("(%d+)"))
+    if not setID then
+        print("|cffffcc00MidnightEvents|r usage: /mewidget <setID>")
+        return
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    print(string.format("|cffffcc00MidnightEvents|r widgetSet=%d, count=%d",
+                        setID, #widgets))
+    for i, w in ipairs(widgets) do
+        local tname  = WIDGET_TYPE_NAMES[w.widgetType] or "?"
+        local infoFn = WIDGET_INFO_FNS[w.widgetType]
+        local info   = infoFn and infoFn(w.widgetID) or nil
+        print(string.format("  [%d] id=%d type=%d (%s)%s",
+            i, w.widgetID, w.widgetType, tname,
+            info and "" or "  no-info-fn"))
+        if type(info) == "table" then
+            -- Dump useful scalar fields. Filter to the ones likely to carry
+            -- progress/status data; skip texture / color tables to keep chat
+            -- readable.
+            local fields = { "text", "tooltip", "barMin", "barMax", "barValue",
+                             "leftBarMin", "leftBarMax", "leftBarValue",
+                             "rightBarMin", "rightBarMax", "rightBarValue",
+                             "leftBarText", "rightBarText",
+                             "iconValue", "fillMin", "fillMax", "fillValue",
+                             "stateColor", "shownState", "enabledState",
+                             "overrideBarText" }
+            for _, k in ipairs(fields) do
+                local v = info[k]
+                if v ~= nil and type(v) ~= "table" then
+                    print(string.format("       %s = %s", k, tostring(v)))
+                end
+            end
+        end
     end
 end
