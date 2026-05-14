@@ -290,9 +290,15 @@ end
 -- they survive disappearing from the live list (the user-visible signal
 -- for "this character completed this delve today").
 --
--- Belt-and-suspenders: if the live list is non-empty but disjoint from the
--- cache, the rotation shifted independently of the daily clock (rare). Wipe
--- and rebuild rather than carrying yesterday's set forward.
+-- Defense in depth:
+--   1. Per-reset bulk wipe (primary mechanism)
+--   2. Per-entry seenAt timestamp + stale-entry filter (catches edge cases
+--      where the bulk wipe missed — e.g. CurrentDailyResetEpoch returning
+--      nil during early-load, or any other path that leaves yesterday's
+--      entries in the table when today's reset has passed)
+--   3. Disjoint-set check: if the live list is non-empty but disjoint from
+--      the cache, the rotation shifted independently of the daily clock
+--      (rare). Wipe and rebuild rather than carrying yesterday's set forward.
 local function UpdateBountifulSeen()
     if not ns.char then return end
 
@@ -302,6 +308,14 @@ local function UpdateBountifulSeen()
         ns.char.bountifulResetEpoch = reset
     end
     ns.char.bountifulSeen = ns.char.bountifulSeen or {}
+
+    if reset then
+        for poiID, d in pairs(ns.char.bountifulSeen) do
+            if not d.seenAt or d.seenAt < reset then
+                ns.char.bountifulSeen[poiID] = nil
+            end
+        end
+    end
 
     local visible = ns.Events and ns.Events.GetBountifulDelves() or {}
 
@@ -319,6 +333,7 @@ local function UpdateBountifulSeen()
                 name      = d.name,
                 atlasName = d.atlasName,
                 mapID     = d.mapID,
+                seenAt    = time(),
             }
         end
     end
@@ -473,15 +488,28 @@ local function BuildTooltip()
     if #active == 0 then
         Tooltip:AddLine("(no active events)", 0.5, 0.5, 0.5)
     else
-        -- Long-timer threshold for map-event POIs: many continuous-presence
-        -- POIs (Void Incursion, Void Rift variants) carry a secondsLeft of
-        -- "time until weekly reset" rather than "time left in current firing
-        -- window." Rendering that as "4d 23h left" misleads the player into
-        -- thinking they have ages — better to treat as untimed continuous.
+        -- Threshold model for map-event POI timers:
+        --   * MAP_TIMER_CAP (12h): treat as untimed continuous — the
+        --     secondsLeft is almost certainly "time until weekly reset" on
+        --     a continuous-presence POI (Void Incursion / Rift variants),
+        --     not a fire-window timer.
+        --   * FIRE_WINDOW (2h): if secondsLeft is between FIRE_WINDOW and
+        --     MAP_TIMER_CAP AND the POI has no progress widget, it's a
+        --     between-firings rotation timer (Abundance variants sitting
+        --     on the map with "next firing in 6h" countdowns). Drop these
+        --     from Now entirely — Blizz's events panel doesn't render them
+        --     as ongoing either, and they'll reappear in Upcoming via the
+        --     scheduler. Mining Voidburrow at 42m (< FIRE_WINDOW) stays.
         local MAP_TIMER_CAP = 12 * 3600
+        local FIRE_WINDOW   =  2 * 3600
         local function isLongMapTimer(ev, secs)
             return ev.source == "map-event"
                    and secs and secs > MAP_TIMER_CAP
+        end
+        local function isBetweenFirings(ev, secs, progPct)
+            return ev.source == "map-event"
+                   and secs and secs > FIRE_WINDOW and secs <= MAP_TIMER_CAP
+                   and not progPct
         end
 
         -- Pre-compute remaining + kind + progress so we can sort, then
@@ -496,7 +524,9 @@ local function BuildTooltip()
             if isLongMapTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
-            if not (ev.isLocked and not progPct) then
+            local skip = (ev.isLocked and not progPct)
+                         or isBetweenFirings(ev, secs, progPct)
+            if not skip then
                 rows[#rows + 1] = {
                     ev = ev, secs = secs, kind = kind,
                     progPct = progPct, firing = firing,
