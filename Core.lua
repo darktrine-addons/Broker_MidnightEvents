@@ -886,7 +886,7 @@ local function BuildTooltip()
 
     -- ── Footer ────────────────────────────────────────────────────────────────
     Tooltip:AddLine(" ")
-    Tooltip:AddDoubleLine("", "Broker: MidnightEvents  v" .. addonVersion,
+    Tooltip:AddDoubleLine("", "Broker: MidnightEvents " .. addonVersion,
                               0, 0, 0, 0.45, 0.45, 0.45)
     Tooltip:Show()
 end
