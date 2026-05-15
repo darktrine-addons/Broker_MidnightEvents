@@ -251,9 +251,12 @@ end
 -- Walk active + upcoming events and pick the row to surface in the broker
 -- bar. Priority:
 --   1. Any event whose firing heuristic (Data.lua's ns.eventFiringHeuristic)
---      reports it as firing right now. Highest player value — "you should
---      rush to this NOW" beats every countdown.
---   2. Smallest non-nil remaining-seconds across active + upcoming.
+--      reports it as firing right now. Highest player value — "rush to this
+--      NOW" beats every countdown.
+--   2. Smallest urgency-seconds across active + upcoming, where active rows
+--      with a progress widget contribute synthetic seconds (100-pct)*60.
+--      Mirrors the tooltip Now-section sort: a 97% Impending Void Incursion
+--      (synthetic 3 min) wins over a real 19-min countdown.
 --   3. Fallback to first untimed active event ("ongoing") when nothing has
 --      a countdown.
 local function GetSoonest()
@@ -271,17 +274,25 @@ local function GetSoonest()
     end
 
     local soonest, soonestSecs, soonestKind
-    for _, ev in ipairs(active) do
-        local secs, kind = EventRemaining(ev, now)
+    local function consider(ev, secs, kind)
         if secs and (not soonestSecs or secs < soonestSecs) then
             soonest, soonestSecs, soonestKind = ev, secs, kind
         end
     end
+    for _, ev in ipairs(active) do
+        local secs, kind = EventRemaining(ev, now)
+        local _, _, progPct = GetEventProgress(ev)
+        if progPct then
+            local pctSecs = math.max(0, (100 - progPct) * 60)
+            if not secs or pctSecs < secs then
+                secs, kind = pctSecs, "building"
+            end
+        end
+        consider(ev, secs, kind)
+    end
     for _, ev in ipairs(ns.Events.GetUpcoming(24 * 3600)) do
         local secs, kind = EventRemaining(ev, now)
-        if secs and (not soonestSecs or secs < soonestSecs) then
-            soonest, soonestSecs, soonestKind = ev, secs, kind
-        end
+        consider(ev, secs, kind)
     end
     if not soonest and active[1] then
         soonest, soonestSecs, soonestKind = active[1], nil, "ongoing"
@@ -387,6 +398,13 @@ local function FormatEventTag(ev, secs, kind)
     local short = ShortName(ev.name)
     if kind == "firing" then
         return short .. " FIRING NOW!", true
+    end
+    if kind == "building" then
+        -- Progress-driven entry; render the % rather than the synthetic
+        -- countdown. Urgent flag at >=90% so the broker turns amber.
+        local _, _, progPct = GetEventProgress(ev)
+        local pct = progPct and math.floor(progPct) or 0
+        return short .. " " .. pct .. "% built", (pct >= 90)
     end
     if kind == "ongoing" then
         return short .. " ongoing", false
