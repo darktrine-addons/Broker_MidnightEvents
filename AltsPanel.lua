@@ -22,6 +22,18 @@ local CHECK = "|A:common-icon-checkmark:14:14|a"
 local CROSS = "|A:common-icon-redx:14:14|a"
 local DASH  = "—"
 
+-- Private tooltip frame for column-header hover. Same containment rationale
+-- as the main tooltip in Core.lua: this addon reads C_UIWidgetManager
+-- barValue/barMax and does arithmetic on them (taints control flow under
+-- 12.x's protected-data model). Writing to the SHARED GameTooltip from any
+-- handler in this addon would propagate the taint to GameTooltip itself —
+-- which Blizzard's events-panel tooltip uses, leading to "compare a secret
+-- number value" errors deep in widget layout. Containment: our own frame.
+local HeaderTip = CreateFrame("GameTooltip",
+                              "BrokerMidnightEventsAltsHeaderTip",
+                              UIParent,
+                              "GameTooltipTemplate")
+
 local panel       -- created lazily on first Toggle()
 local rowPool = {}
 local cellPoolByRow = setmetatable({}, { __mode = "k" })
@@ -205,18 +217,19 @@ local function PopulateRow(row, charKey, char, columns, currentWeeklyReset)
     HideExcessCells(row, #columns)
 end
 
--- Header-cell hover shows the full column label, so the abbreviations stay
--- decipherable without crowding the row. Uses the shared GameTooltip because
--- we're rendering static strings — no protected-data round-trip, no taint
--- containment needed.
+-- Header-cell hover shows the full column label. Uses the addon's private
+-- HeaderTip frame, NOT the shared GameTooltip — our control flow is
+-- already tainted by GetEventProgress's widget arithmetic elsewhere in the
+-- addon, so touching shared GameTooltip from any of our handlers would
+-- propagate taint into Blizzard UI paths that operate on it.
 local function HeaderCellOnEnter(self)
     if not self.fullLabel then return end
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText(self.fullLabel)
-    GameTooltip:Show()
+    HeaderTip:SetOwner(self, "ANCHOR_TOP")
+    HeaderTip:SetText(self.fullLabel)
+    HeaderTip:Show()
 end
 local function HeaderCellOnLeave()
-    GameTooltip:Hide()
+    HeaderTip:Hide()
 end
 
 local function RenderHeader(columns)
