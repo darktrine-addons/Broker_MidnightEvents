@@ -67,20 +67,27 @@ local function FormatRemaining(secs)
     return d .. "d " .. h .. "h " .. m .. "m"
 end
 
--- Pull the first StatusBar widget's value from any of the candidate widget
--- sets and return (barValue, barMax, percent). nil when no set has a
--- StatusBar widget with fill data.
+-- ── progress cache ───────────────────────────────────────────────────────────
+-- Background ticker that pulls each active event's progress percentage
+-- once per interval and writes it to a plain Lua table. Render paths
+-- (BuildTooltip, UpdateBrokerText, GetSoonest, FormatEventTag) read this
+-- table — they never call C_UIWidgetManager themselves.
 --
--- Why multiple sets: Void Incursion's tooltipWidgetSet (2041) only has the
--- text widgets shown in the on-hover tooltip ("Rewards:", "Void forces are
--- attacking…"). The actual progress StatusBar lives in iconWidgetSet (2042)
--- — that's what drives the "1%" overlay you see on the map icon. We try
--- tooltipWidgetSet first, then iconWidgetSet, so events that put the bar in
--- either spot just work.
+-- Why the indirection: 12.x's protected-data model treats StatusBar
+-- barValue / barMax as secret. Any arithmetic on them taints the calling
+-- execution context. If a render path does that arithmetic, the entire
+-- frame's-worth of execution becomes tainted — and anything it touches
+-- (the shared C_UIWidgetManager state, frame state propagated into
+-- OnClick, etc.) inherits the taint, breaking unrelated Blizzard UI
+-- (events panel widget tooltips, WorldMapFrame:HandleUserActionOpenQuestLog,
+-- protected SetPassThroughButtons cascade).
 --
--- Cheap to call per render (~2 widget queries per event in the Now section);
--- no caching needed at current event counts.
-local function GetEventProgress(ev)
+-- By doing the arithmetic in a dedicated ticker context that ONLY writes
+-- to a plain Lua table, the taint stays inside that one call and dies
+-- when the callback returns. Render paths run untainted.
+local progressCache = {}  -- areaPoiID → percent (plain number)
+
+local function ProbeProgressForEvent(ev)
     if not (ev and C_UIWidgetManager
             and C_UIWidgetManager.GetAllWidgetsBySetID
             and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo) then
@@ -93,24 +100,46 @@ local function GetEventProgress(ev)
             if w.widgetType == 2 then  -- Enum.UIWidgetVisualizationType.StatusBar
                 local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
                 if info and info.barMax and info.barMax > 0 then
-                    return info.barValue, info.barMax,
-                           (info.barValue or 0) / info.barMax * 100
+                    return (info.barValue or 0) / info.barMax * 100
                 end
             end
         end
         return nil
     end
-    local v, m, p = probe(ev.tooltipWidgetSet)
-    if v then return v, m, p end
-    v, m, p = probe(ev.iconWidgetSet)
-    if v then return v, m, p end
-    -- Per-POI override for events whose progress bar lives in a widget set
-    -- not referenced by either tooltipWidgetSet or iconWidgetSet (Void
-    -- Incursion: iws drops to nil mid-firing but widget set 2042 still
-    -- carries the build bar). See ns.eventProgressWidgetSet in Data.lua.
+    -- Try POI's own widget sets first, then the per-POI override
+    -- (Void Incursion → 2042; see ns.eventProgressWidgetSet in Data.lua).
+    local p = probe(ev.tooltipWidgetSet)
+              or probe(ev.iconWidgetSet)
+    if p then return p end
     local overrideSet = ev.areaPoiID and ns.eventProgressWidgetSet
                         and ns.eventProgressWidgetSet[ev.areaPoiID]
     return probe(overrideSet)
+end
+
+-- Periodically rebuild the progressCache from active events. Runs in its
+-- own ticker context — when it taints itself doing barValue arithmetic,
+-- the taint stays inside this call. Writes go to a plain Lua table.
+local function RefreshProgressCache()
+    if not ns.Events then return end
+    local fresh = {}
+    for _, ev in ipairs(ns.Events.GetActive() or {}) do
+        if ev.areaPoiID then
+            local pct = ProbeProgressForEvent(ev)
+            if pct then fresh[ev.areaPoiID] = pct end
+        end
+    end
+    progressCache = fresh
+end
+
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(2, RefreshProgressCache)
+end
+
+-- Cache reader for render paths. Returns the percentage (plain number) or
+-- nil. No widget-API call, no arithmetic on secret values — safe to call
+-- from any rendering or click path without tainting.
+local function GetEventProgressPct(ev)
+    return ev and ev.areaPoiID and progressCache[ev.areaPoiID] or nil
 end
 
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
@@ -266,7 +295,7 @@ local function GetSoonest()
     local active = ns.Events.GetActive()
     if ns.IsEventFiring then
         for _, ev in ipairs(active) do
-            local _, _, progPct = GetEventProgress(ev)
+            local progPct = GetEventProgressPct(ev)
             if ns.IsEventFiring(ev.areaPoiID, progPct) then
                 return ev, nil, "firing"
             end
@@ -281,7 +310,7 @@ local function GetSoonest()
     end
     for _, ev in ipairs(active) do
         local secs, kind = EventRemaining(ev, now)
-        local _, _, progPct = GetEventProgress(ev)
+        local progPct = GetEventProgressPct(ev)
         if progPct then
             local pctSecs = math.max(0, (100 - progPct) * 60)
             if not secs or pctSecs < secs then
@@ -402,7 +431,7 @@ local function FormatEventTag(ev, secs, kind)
     if kind == "building" then
         -- Progress-driven entry; render the % rather than the synthetic
         -- countdown. Urgent flag at >=90% so the broker turns amber.
-        local _, _, progPct = GetEventProgress(ev)
+        local progPct = GetEventProgressPct(ev)
         local pct = progPct and math.floor(progPct) or 0
         return short .. " " .. pct .. "% built", (pct >= 90)
     end
@@ -538,7 +567,7 @@ local function BuildTooltip()
         local rows = {}
         for _, ev in ipairs(active) do
             local secs, kind = EventRemaining(ev, now)
-            local _, _, progPct = GetEventProgress(ev)
+            local progPct = GetEventProgressPct(ev)
             local firing = ns.IsEventFiring
                            and ns.IsEventFiring(ev.areaPoiID, progPct)
             if isLongTimer(ev, secs) then
