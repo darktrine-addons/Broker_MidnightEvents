@@ -36,14 +36,14 @@ end
 --   { questIDs = {a, b…} } — pool/rotation slot; row done iff any member flagged
 -- Refreshed on PLAYER_ENTERING_WORLD, QUEST_TURNED_IN, QUEST_REMOVED.
 ns.weeklies = {
-    { key = "abundance",       questID = 89507, label = "Abundant Offerings", short = "Abund" },
-    { key = "stormarion",      questID = 94581, label = "Stand Your Ground",  short = "Stmrn" },
-    { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task", short = "PreyN" },
+    { key = "abundance",       questID = 89507, label = "Abundant Offerings", short = "AbunO" },
+    { key = "stormarion",      questID = 94581, label = "Stand Your Ground",  short = "SYG" },
+    { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task", short = "NightT" },
 
     -- Lady Liadrin's choice pool. She offers ~4 of 7 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward
     -- Spark of Radiance + Apex Cache.
-    { key = "liadrin", label = "Lady Liadrin's Weekly", short = "Liad", questIDs = {
+    { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW", questIDs = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
           93892,  -- Midnight: Stormarion Assault
@@ -61,7 +61,7 @@ ns.weeklies = {
           94386,  -- Void Assaults: Zul'Aman
       } },
 
-    { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "Haran" },
+    { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "LL" },
 }
 
 -- Last-resort POI name lookup. C_AreaPoiInfo.GetAreaPOIInfo returns nil

@@ -53,7 +53,7 @@ local function GetColumns()
     local showWB = not ns.db or ns.db.showWorldBosses ~= false
     if showWB then
         cols[#cols + 1] = {
-            key = "_boss", short = "Boss", label = "World Boss", kind = "boss",
+            key = "_boss", short = "WBoss", label = "World Boss", kind = "boss",
         }
     end
     for _, w in ipairs(ns.weeklies or {}) do
