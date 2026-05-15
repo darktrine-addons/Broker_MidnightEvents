@@ -6,7 +6,7 @@
 ## Author: artherion77
 ## Version: @project-version@
 ## Category-enUS: Data Broker
-## SavedVariables: Broker_MidnightEventsDB
+## SavedVariables: Broker_MidnightEventsDB Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
@@ -19,3 +19,4 @@ Settings.lua
 Events.lua
 Core.lua
 AltsPanel.lua
+DevHarvest.lua
