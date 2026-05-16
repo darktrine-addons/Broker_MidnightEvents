@@ -1012,7 +1012,8 @@ local function BuildTooltip()
     -- visited (cache empty). Lifetime entries at completedAt render with
     -- a green ✓ and dim label — done permanently. See ns.charProgress
     -- in Data.lua for the widget-set mapping.
-    if ns.charProgress and ns.char and ns.char.voidforge then
+    if SectionEnabled("voidforge")
+       and ns.charProgress and ns.char and ns.char.voidforge then
         local rows = {}
         for _, entry in ipairs(ns.charProgress) do
             local p = ns.char.voidforge[entry.key]

@@ -11,11 +11,12 @@ local addonName, ns = ...
 -- the whole section).
 local defaults = {
     enabledSections = {
-        now      = true,
-        upcoming = true,
-        delves   = true,
-        weekly   = true,
-        alts     = true,
+        now       = true,
+        upcoming  = true,
+        delves    = true,
+        weekly    = true,
+        voidforge = true,
+        alts      = true,
     },
     showWorldBosses = true,
     broker = {
@@ -157,11 +158,12 @@ sf:SetScript("OnEvent", function(self, event, name)
         CreateSettingsListSectionHeaderInitializer("Tooltip Sections", nil))
 
     local sectionOptions = {
-        { key = "now",      label = "Now",                       desc = "Show currently-firing events (Stormarion, Legends, ongoing Abundance, etc.)." },
-        { key = "upcoming", label = "Upcoming (next 24h)",       desc = "Show scheduled events firing within the next 24 hours." },
-        { key = "delves",   label = "Bountiful Delves (today)",  desc = "Show today's bountiful Delve rotation. Auto-hidden on chars outside the Midnight continent." },
-        { key = "weekly",   label = "This Week",                 desc = "Show the per-character weekly checklist (World Bosses + tracked weekly quests)." },
-        { key = "alts",     label = "Alts roll-up",              desc = "Aggregate weekly progress across every character you've logged into with this addon enabled. Hidden when only the active character is tracked." },
+        { key = "now",       label = "Now",                       desc = "Show currently-firing events (Stormarion, Legends, ongoing Abundance, etc.)." },
+        { key = "upcoming",  label = "Upcoming (next 24h)",       desc = "Show scheduled events firing within the next 24 hours." },
+        { key = "delves",    label = "Bountiful Delves (today)",  desc = "Show today's bountiful Delve rotation with the active story variant. Auto-hidden on chars outside the Midnight continent." },
+        { key = "weekly",    label = "This Week",                 desc = "Show the per-character weekly checklist (World Bosses + tracked weekly quests)." },
+        { key = "voidforge", label = "Voidforge progress",        desc = "Show per-character Voidforge counters (Voidcores transmuted, Nilhammer empowered) from Decimus in Voidstorm. Auto-hidden until the first time the character visits Decimus." },
+        { key = "alts",      label = "Alts roll-up",              desc = "Aggregate weekly progress across every character you've logged into with this addon enabled. Hidden when only the active character is tracked." },
     }
     for _, opt in ipairs(sectionOptions) do
         local setting = Settings.RegisterAddOnSetting(

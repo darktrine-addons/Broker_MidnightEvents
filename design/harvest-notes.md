@@ -129,3 +129,28 @@ weekly-reset behaviour is still TBD; confirm at next reset.
 6. **Void Assault zone rotation** — confirmed 94385 (Eversong) +
    94386 (Zul'Aman). Harandar/Voidstorm variants likely exist; harvest
    when rotation lands.
+
+## Candidate weeklies (not yet promoted)
+
+Harvested IDs whose classification is still uncertain (sample size 1, scope
+ambiguous, etc.). Promote to `ns.weeklies` in `Data.lua` when ready.
+
+- `91700` **Darkness Unmade** — freq=2: kill 2 rares in Stormarion Citadel,
+  drops Stormarion Core. Distinct from Stand Your Ground; may merit its own
+  row or fold into a Stormarion umbrella.
+- `95468` **Hope in the Darkest Corners** — freq=2: complete WQs / Dungeons /
+  Delves in Midnight zones; rewards Quel'Thalas Adventurer's Cache. Likely
+  OOS umbrella (Midnight Routine territory), pending final scope call.
+
+## Out-of-scope (ceded to Midnight Routine)
+
+Harvested IDs that map to design out-of-scope content. Listed for reference
+only; uncomment back into Data.lua only if scope changes.
+
+| Quest ID | Title                                       | Reason                            |
+|----------|---------------------------------------------|-----------------------------------|
+| 93613    | A Savage Path Through Time                  | Timewalking weekly (Aethas slot)  |
+| 93697    | Shimmering Melodies                         | Profession/enchanting             |
+| 93755    | Den of Nalorakk                             | Dungeon weekly                    |
+| 94790    | Research Console: Exploring the Void        | Generic Voidstorm WQ weekly       |
+| 95413    | Community Engagement                        | Housing weekly (Vaeli)            |

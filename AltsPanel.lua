@@ -264,6 +264,10 @@ end
 local function CollectChars()
     local out = {}
     if not (ns.db and ns.db.chars) then return out end
+    -- TODO: hiddenChars is scaffolding for a future "right-click row → hide
+    -- character" feature; no code currently writes to it, so this branch
+    -- always reads an empty table. Left in place so the eventual hide
+    -- feature only needs to add the write path.
     local hidden = ns.db.hiddenChars or {}
     for charKey, char in pairs(ns.db.chars) do
         if not hidden[charKey] then

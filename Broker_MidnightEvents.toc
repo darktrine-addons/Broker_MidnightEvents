@@ -6,17 +6,18 @@
 ## Author: artherion77
 ## Version: @project-version@
 ## Category-enUS: Data Broker
-## SavedVariables: Broker_MidnightEventsDB Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue
+## SavedVariables: Broker_MidnightEventsDB#@debug@ Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue#@end-debug@
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
-Locales\Locales.xml
 Data.lua
 Settings.lua
 Events.lua
 Core.lua
 AltsPanel.lua
+#@debug@
 DevHarvest.lua
+#@end-debug@
