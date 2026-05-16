@@ -348,13 +348,24 @@ end
 --
 -- Defense in depth:
 --   1. Per-reset bulk wipe (primary mechanism)
---   2. Per-entry seenAt timestamp + stale-entry filter (catches edge cases
---      where the bulk wipe missed — e.g. CurrentDailyResetEpoch returning
---      nil during early-load, or any other path that leaves yesterday's
---      entries in the table when today's reset has passed)
---   3. Disjoint-set check: if the live list is non-empty but disjoint from
---      the cache, the rotation shifted independently of the daily clock
---      (rare). Wipe and rebuild rather than carrying yesterday's set forward.
+--   2. Per-entry seenAt timestamp + stale-entry filter — entries with
+--      seenAt before the current daily reset get dropped (catches edge
+--      cases where the bulk wipe missed, e.g. CurrentDailyResetEpoch
+--      returning nil during early-load)
+--   3. Settling-window write skip: at the daily reset moment,
+--      GetDelvesForMap briefly returns BOTH yesterday's outgoing rotation
+--      AND today's incoming rotation in a single snapshot (observed
+--      Shatanaris 2026-05-15: 7 entries captured at reset+49s, where the
+--      daily cap is 4). For RESET_SETTLING_SEC after reset we skip cache
+--      writes entirely, letting the API settle before we trust it. Cache
+--      entries already in the table from prior sessions persist; they'll
+--      be cleaned at the next daily-reset bulk wipe. Forward-only fix —
+--      no retroactive cleanup of polluted state.
+--   4. Disjoint-set check: if the live list is non-empty but disjoint
+--      from the cache, the rotation shifted independently of the daily
+--      clock. Wipe and rebuild rather than carrying yesterday's set forward.
+local RESET_SETTLING_SEC = 300
+
 local function UpdateBountifulSeen()
     if not ns.char then return end
 
@@ -383,13 +394,21 @@ local function UpdateBountifulSeen()
         if not overlap then ns.char.bountifulSeen = {} end
     end
 
+    -- Settling-window write skip: don't add new entries within the first
+    -- RESET_SETTLING_SEC after the daily reset — the API may still be
+    -- returning a mix of yesterday's and today's rotations.
+    local now = time()
+    if reset and now < reset + RESET_SETTLING_SEC then
+        return
+    end
+
     for _, d in ipairs(visible) do
         if not ns.char.bountifulSeen[d.areaPoiID] then
             ns.char.bountifulSeen[d.areaPoiID] = {
                 name      = d.name,
                 atlasName = d.atlasName,
                 mapID     = d.mapID,
-                seenAt    = time(),
+                seenAt    = now,
             }
         end
     end
