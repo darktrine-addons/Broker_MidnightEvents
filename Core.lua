@@ -883,7 +883,10 @@ local function BuildTooltip()
                 local completed = GetDelveStoryCompletion(r.name, story)
                 local color, prefix
                 if completed == true then
-                    color, prefix = "55cc55", "✓ "
+                    -- Atlas icon renders cleanly; Unicode ✓ falls back to a
+                    -- glyph square in WoW's default font.
+                    color  = "55cc55"
+                    prefix = "|A:common-icon-checkmark:12:12|a "
                 elseif completed == false then
                     color, prefix = "ddbb88", ""
                 else
