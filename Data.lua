@@ -98,6 +98,15 @@ ns.knownEventNames = {
 --   "lifetime" — the bar ticks up over multiple weeks (Nilhammer: +1/wk
 --                up to 4/4). Once `completedAt` is reached, the row
 --                renders dim with a ✓ permanently.
+-- Quest that signals the Voidforge build chain is complete. 95268 "New
+-- Tools, New Heights" is the post-build bridge that opens the Nilhammer
+-- empowerment line — completion guarantees Decimus is interactable. The
+-- underlying Voidforge build is warband-wide, so on alts that inherit
+-- the unlock without personally completing this quest, Core falls back
+-- to "have we ever observed widget data for this char" as a secondary
+-- unlock signal.
+ns.voidforgeUnlockQuest = 95268
+
 ns.charProgress = {
     {
         key         = "voidcores",

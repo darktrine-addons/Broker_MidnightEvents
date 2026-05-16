@@ -1006,38 +1006,66 @@ local function BuildTooltip()
 
     -- ── Section: Voidforge progress ──────────────────────────────────────────
     -- Per-character N/M progress rows for Decimus's Voidforge trackers
-    -- (Voidcores transmuted, Nilhammer empowered). Source widgets only
-    -- update when the player is near Decimus, so this section shows the
-    -- last-observed value. Hidden entirely on chars that have never
-    -- visited (cache empty). Lifetime entries at completedAt render with
-    -- a green ✓ and dim label — done permanently. See ns.charProgress
-    -- in Data.lua for the widget-set mapping.
-    if SectionEnabled("voidforge")
-       and ns.charProgress and ns.char and ns.char.voidforge then
-        local rows = {}
-        for _, entry in ipairs(ns.charProgress) do
-            local p = ns.char.voidforge[entry.key]
-            if p then rows[#rows + 1] = { entry = entry, p = p } end
+    -- (Voidcores transmuted, Nilhammer empowered). Three display states:
+    --   1. Section disabled in settings → entirely hidden
+    --   2. Voidforge not unlocked on this char → dim header + small
+    --      explanatory line. Decimus's build chain is warband-wide; one
+    --      character on the account needs to complete it.
+    --   3. Unlocked but no cached data yet → header + prompt to visit
+    --      Decimus so the widget probe can populate the cache.
+    --   4. Unlocked + data present → normal N/M rows. Lifetime entries
+    --      at completedAt render with a green ✓.
+    --
+    -- Unlock detection prefers the explicit quest flag (95268), with a
+    -- "any observed widget data" fallback for alts whose warband-shared
+    -- unlock isn't reflected in their quest log.
+    if SectionEnabled("voidforge") and ns.charProgress then
+        local unlocked = false
+        if ns.voidforgeUnlockQuest and C_QuestLog
+           and C_QuestLog.IsQuestFlaggedCompleted
+           and C_QuestLog.IsQuestFlaggedCompleted(ns.voidforgeUnlockQuest) then
+            unlocked = true
+        elseif ns.char and ns.char.voidforge and next(ns.char.voidforge) then
+            unlocked = true
         end
-        if #rows > 0 then
-            Tooltip:AddLine(" ")
+
+        Tooltip:AddLine(" ")
+        if not unlocked then
+            Tooltip:AddLine("Voidforge progress", 0.28, 0.45, 0.45)
+            Tooltip:AddLine(
+                "  Not unlocked. Complete Decimus's quest series on one character.",
+                0.50, 0.50, 0.50)
+        else
             Tooltip:AddLine("Voidforge progress", CL_r, CL_g, CL_b)
-            for _, r in ipairs(rows) do
-                local label = r.entry.label
-                if r.entry.hint then
-                    label = label .. " |cff707070(" .. r.entry.hint .. ")|r"
+            local rows = {}
+            if ns.char and ns.char.voidforge then
+                for _, entry in ipairs(ns.charProgress) do
+                    local p = ns.char.voidforge[entry.key]
+                    if p then rows[#rows + 1] = { entry = entry, p = p } end
                 end
-                local valueStr = r.p.value .. "/" .. r.p.max
-                local done = r.entry.completedAt
-                             and r.p.value >= r.entry.completedAt
-                local lr, lg, lb = CV_r, CV_g, CV_b
-                local vr, vg, vb = CV_r, CV_g, CV_b
-                if done then
-                    lr, lg, lb = 0.55, 0.55, 0.55
-                    vr, vg, vb = 0.55, 0.85, 0.55
-                    valueStr   = CHECK .. " " .. valueStr
+            end
+            if #rows == 0 then
+                Tooltip:AddLine(
+                    "  Visit Decimus in Voidstorm to populate.",
+                    0.55, 0.55, 0.55)
+            else
+                for _, r in ipairs(rows) do
+                    local label = r.entry.label
+                    if r.entry.hint then
+                        label = label .. " |cff707070(" .. r.entry.hint .. ")|r"
+                    end
+                    local valueStr = r.p.value .. "/" .. r.p.max
+                    local done = r.entry.completedAt
+                                 and r.p.value >= r.entry.completedAt
+                    local lr, lg, lb = CV_r, CV_g, CV_b
+                    local vr, vg, vb = CV_r, CV_g, CV_b
+                    if done then
+                        lr, lg, lb = 0.55, 0.55, 0.55
+                        vr, vg, vb = 0.55, 0.85, 0.55
+                        valueStr   = CHECK .. " " .. valueStr
+                    end
+                    Tooltip:AddDoubleLine(label, valueStr, lr, lg, lb, vr, vg, vb)
                 end
-                Tooltip:AddDoubleLine(label, valueStr, lr, lg, lb, vr, vg, vb)
             end
         end
     end
