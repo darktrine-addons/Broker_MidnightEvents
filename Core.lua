@@ -116,6 +116,67 @@ local function ProbeProgressForEvent(ev)
     return probe(overrideSet)
 end
 
+-- Parse "Story Variant: <name>" out of a delve POI's tooltipWidgetSet.
+-- Returns the story name (color-codes stripped) or nil if the set doesn't
+-- expose a story-variant widget. Each bountiful delve POI carries one
+-- TextWithState widget whose text starts with "Story Variant:" — the
+-- color-coded portion is the daily-rotating story name.
+local function ParseDelveStory(setID)
+    if not (setID and C_UIWidgetManager
+            and C_UIWidgetManager.GetAllWidgetsBySetID
+            and C_UIWidgetManager.GetTextWithStateWidgetVisualizationInfo) then
+        return nil
+    end
+    for _, w in ipairs(C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}) do
+        if w.widgetType == 8 then  -- TextWithState
+            local info = C_UIWidgetManager.GetTextWithStateWidgetVisualizationInfo(w.widgetID)
+            local text = info and info.text
+            if text and text:find("Story Variant:", 1, true) then
+                local body = text:match("Story Variant:%s*(.+)$")
+                if body then
+                    -- Strip Blizzard color escapes: |cnNAMED_COLOR:, |cffXXXXXX, |r
+                    body = body:gsub("|c[nN][%w_]+:", "")
+                               :gsub("|c%x+", "")
+                               :gsub("|r", "")
+                               :gsub("^%s+", "")
+                               :gsub("%s+$", "")
+                    if body ~= "" then return body end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- activeStoryByDelve: delveName → storyName. Populated by the same ticker
+-- that drives event progress (RefreshProgressCache below) so widget reads
+-- stay inside the taint-isolated ticker context.
+local activeStoryByDelve = {}
+
+-- Per-character completion lookup for a (delveName, storyName) pair.
+-- Indexes into ns.delveStoryAchievement (Data.lua) to find the per-delve
+-- sub-achievement, iterates its criteria, returns the completed boolean
+-- of the criterion whose name matches the story variant. Returns nil if:
+--   * The delve isn't in our achievement map
+--   * The achievement criteria aren't yet loaded (returns nil from the
+--     Blizzard API until the player has opened the Achievement UI once
+--     or the cached data is otherwise warm — we render "(story)" without
+--     a ✓/✗ in that case)
+local function GetDelveStoryCompletion(delveName, storyName)
+    if not (ns.delveStoryAchievement and GetAchievementCriteriaInfo) then
+        return nil
+    end
+    local achievementID = ns.delveStoryAchievement[delveName]
+    if not achievementID then return nil end
+    local n = GetAchievementNumCriteria
+              and GetAchievementNumCriteria(achievementID) or 3
+    for i = 1, n do
+        local criteriaString, _, completed = GetAchievementCriteriaInfo(achievementID, i)
+        if criteriaString == storyName then return completed end
+    end
+    return nil
+end
+
 -- Probe a Voidforge-style widget set (Data.lua's ns.charProgress entries):
 -- one StatusBar widget per set, exposing barValue + barMax. Returns
 -- (value, max) or nil when the widget set isn't currently registered
@@ -167,6 +228,19 @@ local function RefreshProgressCache()
             end
         end
     end
+
+    -- Delve story variants: parse the bountiful delves' tooltipWidgetSet
+    -- for the daily-rotating story name. Indexed by delve name (matches
+    -- across continent and zone POIs for the same delve). Completion
+    -- status is queried at render time from the achievement criteria.
+    local stories = {}
+    for _, b in ipairs(ns.Events.GetBountifulDelves() or {}) do
+        if b.name and b.tooltipWidgetSet then
+            local story = ParseDelveStory(b.tooltipWidgetSet)
+            if story then stories[b.name] = story end
+        end
+    end
+    activeStoryByDelve = stories
 end
 
 if C_Timer and C_Timer.NewTicker then
@@ -800,6 +874,23 @@ local function BuildTooltip()
             local label = r.atlasName
                           and ("|A:" .. r.atlasName .. ":16:16|a " .. r.name)
                           or  r.name
+            -- Annotate with today's active story variant for this delve.
+            -- Active story comes from the ticker-populated activeStoryByDelve;
+            -- per-character completion is looked up against the matching
+            -- achievement criterion at render time (cheap, no taint).
+            local story = activeStoryByDelve[r.name]
+            if story then
+                local completed = GetDelveStoryCompletion(r.name, story)
+                local color, prefix
+                if completed == true then
+                    color, prefix = "55cc55", "✓ "
+                elseif completed == false then
+                    color, prefix = "ddbb88", ""
+                else
+                    color, prefix = "909090", ""  -- unknown (criteria not loaded yet)
+                end
+                label = label .. " |cff" .. color .. "(" .. prefix .. story .. ")|r"
+            end
             local valueText, lr, lg, lb, vr, vg, vb
             if r.done then
                 valueText = CHECK

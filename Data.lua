@@ -116,6 +116,35 @@ ns.charProgress = {
     },
 }
 
+-- Delve-name → "Stories" sub-achievement ID. Each entry is a per-delve
+-- 3-criteria achievement (one criterion per story variant). The Loremaster
+-- meta is 61741 (rolls up all 10 sub-achievements; not used here — we want
+-- per-story completion granularity).
+--
+-- Lookup chain at render time:
+--   1. Read each bountiful delve POI's tooltipWidgetSet for a TextWithState
+--      widget whose text matches "Story Variant: <name>"
+--   2. Look up the delve by name in this table → achievement ID
+--   3. Iterate the achievement's criteria; the criterion whose name matches
+--      the story-variant text is this delve's active story
+--   4. The criterion's `completed` boolean is per-character status
+--
+-- Adding a new Midnight delve to the rotation: append { name = id } here.
+-- Patch updates to story names won't break anything because we match by
+-- live widget text, not hardcoded story strings.
+ns.delveStoryAchievement = {
+    ["Atal'Aman"]           = 61729,
+    ["Collegiate Calamity"] = 61726,
+    ["Parhelion Plaza"]     = 61725,
+    ["Shadowguard Point"]   = 61733,
+    ["Sunkiller Sanctum"]   = 61732,
+    ["The Darkway"]         = 61728,
+    ["The Grudge Pit"]      = 61724,
+    ["The Gulf of Memory"]  = 61731,
+    ["The Shadow Enclave"]  = 61727,
+    ["Twilight Crypts"]     = 61730,
+}
+
 -- Per-POI override for the widget set carrying a StatusBar progress meter.
 -- Used when the POI's own tooltipWidgetSet / iconWidgetSet fields don't
 -- reference the progress widget — either because the POI is in a state
