@@ -1366,6 +1366,81 @@ SlashCmdList.BMEDIAG = function()
         end
     end
 
+    -- Broader POI sweep: GetAreaPOIForMap returns ALL POIs for a map, not
+    -- just events/delves. Catches Voidforge-style locations that have
+    -- tooltipWidgetSet bars but aren't classified as event POIs.
+    D.areaPois = {}
+    if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIForMap then
+        local function scanAreaPois(mapID, label)
+            local block = { mapID = mapID, label = label, pois = {} }
+            for _, poiID in ipairs(C_AreaPoiInfo.GetAreaPOIForMap(mapID) or {}) do
+                local p = capturePoi(mapID, poiID)
+                block.pois[#block.pois + 1] = p
+                noteWS(p.tooltipWidgetSet); noteWS(p.iconWidgetSet)
+            end
+            return block
+        end
+        D.areaPois.continent = scanAreaPois(continentMapID, "continent")
+        D.areaPois.zones = {}
+        for _, mid in ipairs(MIDNIGHT_ZONE_IDS) do
+            D.areaPois.zones[#D.areaPois.zones + 1] = scanAreaPois(mid, "zone")
+        end
+    end
+
+    -- Common widget container frames: many world widgets (top-center
+    -- score bars, below-minimap timers, zone-specific progress overlays)
+    -- live on these container frames rather than being attached to a POI.
+    D.widgetContainers = {}
+    for _, name in ipairs({
+        "UIWidgetTopCenterContainerFrame",
+        "UIWidgetBelowMinimapContainerFrame",
+        "UIWidgetPowerBarContainerFrame",
+        "UIWidgetTopRightCornerContainer",
+        "UIWidgetBottomLeftContainerFrame",
+    }) do
+        local f = _G[name]
+        if f then
+            D.widgetContainers[name] = {
+                widgetSetID = f.widgetSetID
+                              or (f.GetRegisteredWidgetSetID
+                                  and f:GetRegisteredWidgetSetID()),
+                isShown = f.IsShown and f:IsShown(),
+            }
+            if D.widgetContainers[name].widgetSetID then
+                noteWS(D.widgetContainers[name].widgetSetID)
+            end
+        end
+    end
+
+    -- Brute-force small-barMax StatusBar discovery. The visible Voidforge
+    -- bars are "0/8" and "1/4" — barMax values < 20 are vanishingly rare
+    -- across the global widget catalogue, so iterating set IDs and
+    -- collecting StatusBar widgets with that signature pinpoints the set.
+    -- Scan range tuned to cover Midnight-era widget set IDs (1000-3500);
+    -- empty IDs return nil from GetAllWidgetsBySetID cheaply.
+    D.smallBarFinds = {}
+    if C_UIWidgetManager and C_UIWidgetManager.GetAllWidgetsBySetID
+       and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo then
+        for setID = 1000, 3500 do
+            local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+            for _, w in ipairs(widgets) do
+                if w.widgetType == 2 then
+                    local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
+                    if info and info.barMax and info.barMax > 0 and info.barMax < 20 then
+                        D.smallBarFinds[#D.smallBarFinds + 1] = {
+                            setID    = setID,
+                            widgetID = w.widgetID,
+                            barMin   = info.barMin,
+                            barMax   = info.barMax,
+                            barValue = info.barValue,
+                        }
+                        noteWS(setID)
+                    end
+                end
+            end
+        end
+    end
+
     D.widgetSets = {}
     for s in pairs(widgetSetSet) do
         D.widgetSets[s] = captureWidgetSet(s)
@@ -1390,12 +1465,13 @@ SlashCmdList.BMEDIAG = function()
     ns.db._diag = D
     print(string.format(
         "|cffffcc00MidnightEvents|r diag captured: sched.ongoing=%d sched.scheduled=%d, "
-        .. "continent.events=%d, zones=%d, widgetSets=%d",
+        .. "continent.events=%d, zones=%d, widgetSets=%d, smallBarFinds=%d",
         #(D.scheduler.ongoing or {}),
         #(D.scheduler.scheduled or {}),
         #D.mapPois.continent.events,
         #D.mapPois.zones,
-        (function() local n = 0 for _ in pairs(D.widgetSets) do n = n + 1 end return n end)()))
+        (function() local n = 0 for _ in pairs(D.widgetSets) do n = n + 1 end return n end)(),
+        #D.smallBarFinds))
     print("|cffffcc00MidnightEvents|r Run /reload (or log out) so SV flushes to disk.")
     print("|cffffcc00  File:|r WTF/Account/<ID>/SavedVariables/Broker_MidnightEvents.lua")
     print("|cffffcc00  Key:|r  Broker_MidnightEventsDB._diag")
