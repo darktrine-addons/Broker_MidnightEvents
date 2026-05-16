@@ -124,12 +124,22 @@ sf:SetScript("OnEvent", function(self, event, name)
     if db.altsPanel.bgAlpha == nil then db.altsPanel.bgAlpha = 0.6 end
 
     -- Weekly reset detection: if the most recent reset is newer than the one
-    -- this character's data covers, wipe weekly state.
+    -- this character's data covers, wipe weekly state. Voidforge entries
+    -- scoped "weekly" (e.g. Voidcores 0/N) reset their value to 0; their
+    -- max stays as the last-observed cap until the next Decimus visit
+    -- refreshes it. Scope-"lifetime" entries (Nilhammer) persist.
     local currentReset = CurrentWeeklyResetEpoch()
     if currentReset and char.weeklyReset < currentReset then
         char.worldBoss   = { done = false }
         char.weeklies    = {}
         char.weeklyReset = currentReset
+        if char.voidforge and ns.charProgress then
+            for _, entry in ipairs(ns.charProgress) do
+                if entry.scope == "weekly" and char.voidforge[entry.key] then
+                    char.voidforge[entry.key].value = 0
+                end
+            end
+        end
     end
 
     -- Register minimap button (LibDBIcon manages show/hide via right-click menu).

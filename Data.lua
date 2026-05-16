@@ -83,6 +83,39 @@ ns.knownEventNames = {
     [8697] = "Void Assaults",
 }
 
+-- Per-character progression tracked via Decimus's Voidforge widgets in
+-- Voidstorm. Each entry maps to a Blizzard widget set carrying a single
+-- StatusBar (value/max). We poll these via the same ticker as event
+-- progress (Core.lua's RefreshProgressCache) and cache the result in
+-- ns.char.voidforge[key] per character. Cache only updates when the
+-- player is near enough Decimus for the widgets to be live; otherwise
+-- the last-known value persists.
+--
+-- Scope semantics:
+--   "weekly"   — the bar value resets each weekly reset (Voidcores).
+--                Settings.lua weekly-reset hook sets cached value to 0
+--                so the tooltip reflects the post-reset state immediately.
+--   "lifetime" — the bar ticks up over multiple weeks (Nilhammer: +1/wk
+--                up to 4/4). Once `completedAt` is reached, the row
+--                renders dim with a ✓ permanently.
+ns.charProgress = {
+    {
+        key         = "voidcores",
+        widgetSetID = 1960,
+        label       = "Voidcores transmuted",
+        hint        = "weekly bonus rolls",
+        scope       = "weekly",
+    },
+    {
+        key         = "nilhammer",
+        widgetSetID = 1958,
+        label       = "Nilhammer empowered",
+        hint        = "Voidforge upgrade",
+        scope       = "lifetime",
+        completedAt = 4,
+    },
+}
+
 -- Per-POI override for the widget set carrying a StatusBar progress meter.
 -- Used when the POI's own tooltipWidgetSet / iconWidgetSet fields don't
 -- reference the progress widget — either because the POI is in a state

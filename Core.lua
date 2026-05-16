@@ -116,9 +116,32 @@ local function ProbeProgressForEvent(ev)
     return probe(overrideSet)
 end
 
--- Periodically rebuild the progressCache from active events. Runs in its
--- own ticker context — when it taints itself doing barValue arithmetic,
--- the taint stays inside this call. Writes go to a plain Lua table.
+-- Probe a Voidforge-style widget set (Data.lua's ns.charProgress entries):
+-- one StatusBar widget per set, exposing barValue + barMax. Returns
+-- (value, max) or nil when the widget set isn't currently registered
+-- (i.e. player isn't near enough Decimus for the live data).
+local function ProbeCharProgressWidget(setID)
+    if not (setID and C_UIWidgetManager
+            and C_UIWidgetManager.GetAllWidgetsBySetID
+            and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo) then
+        return nil
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    for _, w in ipairs(widgets) do
+        if w.widgetType == 2 then
+            local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
+            if info and info.barMax and info.barMax > 0 then
+                return info.barValue, info.barMax
+            end
+        end
+    end
+    return nil
+end
+
+-- Periodically rebuild the progressCache from active events AND refresh
+-- per-character Voidforge progress. Runs in its own ticker context —
+-- the barValue arithmetic taints this call's context only, and writes
+-- go to plain Lua tables (no shared frame state).
 local function RefreshProgressCache()
     if not ns.Events then return end
     local fresh = {}
@@ -129,6 +152,21 @@ local function RefreshProgressCache()
         end
     end
     progressCache = fresh
+
+    -- Voidforge: only updates when player is near Decimus. When the
+    -- probe returns nil, we leave the existing per-char cache untouched
+    -- so the last-observed value stays visible in the tooltip.
+    if ns.char and ns.charProgress then
+        ns.char.voidforge = ns.char.voidforge or {}
+        for _, entry in ipairs(ns.charProgress) do
+            local v, m = ProbeCharProgressWidget(entry.widgetSetID)
+            if v and m then
+                ns.char.voidforge[entry.key] = {
+                    value = v, max = m, seenAt = time(),
+                }
+            end
+        end
+    end
 end
 
 if C_Timer and C_Timer.NewTicker then
@@ -869,6 +907,43 @@ local function BuildTooltip()
             end
             Tooltip:AddDoubleLine(r.label, valueText,
                 labelR, labelG, labelB, vR, vG, vB)
+        end
+    end
+
+    -- ── Section: Voidforge progress ──────────────────────────────────────────
+    -- Per-character N/M progress rows for Decimus's Voidforge trackers
+    -- (Voidcores transmuted, Nilhammer empowered). Source widgets only
+    -- update when the player is near Decimus, so this section shows the
+    -- last-observed value. Hidden entirely on chars that have never
+    -- visited (cache empty). Lifetime entries at completedAt render with
+    -- a green ✓ and dim label — done permanently. See ns.charProgress
+    -- in Data.lua for the widget-set mapping.
+    if ns.charProgress and ns.char and ns.char.voidforge then
+        local rows = {}
+        for _, entry in ipairs(ns.charProgress) do
+            local p = ns.char.voidforge[entry.key]
+            if p then rows[#rows + 1] = { entry = entry, p = p } end
+        end
+        if #rows > 0 then
+            Tooltip:AddLine(" ")
+            Tooltip:AddLine("Voidforge progress", CL_r, CL_g, CL_b)
+            for _, r in ipairs(rows) do
+                local label = r.entry.label
+                if r.entry.hint then
+                    label = label .. " |cff707070(" .. r.entry.hint .. ")|r"
+                end
+                local valueStr = r.p.value .. "/" .. r.p.max
+                local done = r.entry.completedAt
+                             and r.p.value >= r.entry.completedAt
+                local lr, lg, lb = CV_r, CV_g, CV_b
+                local vr, vg, vb = CV_r, CV_g, CV_b
+                if done then
+                    lr, lg, lb = 0.55, 0.55, 0.55
+                    vr, vg, vb = 0.55, 0.85, 0.55
+                    valueStr   = CHECK .. " " .. valueStr
+                end
+                Tooltip:AddDoubleLine(label, valueStr, lr, lg, lb, vr, vg, vb)
+            end
         end
     end
 
