@@ -2,7 +2,7 @@
 
 > 🚧 **Beta in active development.** All listed features work and the addon is daily-driver stable across multiple characters, but the surface is still evolving — expect occasional polish-level changes between releases. Feedback, bug reports, and feature ideas welcome on the [issue tracker](https://github.com/darktrine-addons/Broker_MidnightEvents/issues).
 
-**A compact world-event timer + weekly checklist for WoW Midnight, served through any LibDataBroker host.**
+**A compact world-event timer + associated mini weekly checklist for WoW Midnight, served through any LibDataBroker host.**
 
 The broker bar always shows the most-urgent event — a wave countdown, a "FIRING NOW!" for the Void Incursion, a Skinning Den firing in 12 minutes. Hover the bar (or open the minimap button) and a structured tooltip unfolds: what's happening right now, what's coming in the next 24 hours, today's bountiful Delve rotation with its rotating story variant, your character's weekly checklist, Voidforge progress, and a roll-up across all your alts.
 

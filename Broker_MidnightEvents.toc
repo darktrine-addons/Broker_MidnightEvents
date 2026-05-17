@@ -6,6 +6,8 @@
 ## Author: artherion77
 ## Version: @project-version@
 ## Category-enUS: Data Broker
+## X-Curse-Project-ID: 1545615
+## X-Wago-ID: v633wk6b
 ## SavedVariables: Broker_MidnightEventsDB#@debug@ Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue#@end-debug@
 
 Libs\LibStub\LibStub.lua
