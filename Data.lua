@@ -201,7 +201,16 @@ ns.delveStoryAchievement = {
 -- right set is the one whose enumeration returns a type-2 (StatusBar)
 -- widget with barMax > 0.
 ns.eventProgressWidgetSet = {
-    [8718] = 2042,  -- Void Incursion: build progress for next firing
+    [8718] = 2042,  -- Void Incursion (Eversong variant)
+}
+
+-- Same idea, keyed by event name. Catches every zone variant of the same
+-- event (each zone gets its own POI ID — 8717 Zul'Aman, 8718 Eversong,
+-- future zones — but the underlying widget set is the same) without
+-- requiring a per-POI entry above. Looked up as a fallback after the
+-- per-POI table misses.
+ns.eventProgressWidgetSetByName = {
+    ["Void Incursion"] = 2042,
 }
 
 -- Per-POI heuristic for detecting "main event firing RIGHT NOW." The
@@ -233,21 +242,49 @@ ns.eventProgressWidgetSet = {
 -- Brittle by design. Re-verify on content patches by probing /mewidget
 -- against the relevant widget set while observing the in-zone event state.
 ns.eventFiringHeuristic = {
-    [8718] = {  -- Void Incursion
+    [8718] = {  -- Void Incursion (Eversong variant)
         type = "lowProgress", threshold = 10,
         comment = "Bar resets at major-attack trigger; firing observed to "
                .. "conclude by ~10% rebuild. 2-sample empirical "
                .. "(2026-05-14): bar at 8.35% and ~10% both during "
                .. "confirmed-firing states. Brief false positives after "
-               .. "weekly reset until bar crosses 10%.",
+               .. "weekly reset until bar crosses 10%. Does NOT catch "
+               .. "server-triggered firings that occur mid-build without "
+               .. "the 100%→reset cycle (observed at 17.2% in Zul'Aman "
+               .. "2026-05-23) — the bar value alone is ambiguous in that "
+               .. "case; would need a separate signal to detect reliably.",
     },
 }
 
--- Resolve a firing heuristic for an event entry. Returns true iff the
--- POI has a heuristic and its condition is satisfied right now.
-function ns.IsEventFiring(areaPoiID, progPct)
-    local rule = areaPoiID and ns.eventFiringHeuristic
-                 and ns.eventFiringHeuristic[areaPoiID]
+-- Same idea, keyed by event name. Catches every zone variant without
+-- requiring a per-POI entry. Looked up as a fallback after the per-POI
+-- table misses, so Eversong's 8718 keeps its existing entry above and
+-- Zul'Aman's 8717 (and future zone variants) get the same rule via name.
+ns.eventFiringHeuristicByName = {
+    ["Void Incursion"] = {
+        type = "lowProgress", threshold = 10,
+        comment = "See ns.eventFiringHeuristic[8718] for empirical basis.",
+    },
+}
+
+-- Resolve a firing heuristic for an event. Returns true iff the event has
+-- a heuristic (matched by POI ID first, then by name) and its condition
+-- is satisfied right now.
+function ns.IsEventFiring(ev, progPct)
+    -- Backward compat: callers that pass a raw POI ID still work.
+    local areaPoiID, name
+    if type(ev) == "table" then
+        areaPoiID, name = ev.areaPoiID, ev.name
+    else
+        areaPoiID = ev
+    end
+    local rule
+    if areaPoiID and ns.eventFiringHeuristic then
+        rule = ns.eventFiringHeuristic[areaPoiID]
+    end
+    if not rule and name and ns.eventFiringHeuristicByName then
+        rule = ns.eventFiringHeuristicByName[name]
+    end
     if not rule then return false end
     if rule.type == "lowProgress" then
         return progPct ~= nil and progPct < rule.threshold

@@ -107,13 +107,19 @@ local function ProbeProgressForEvent(ev)
         return nil
     end
     -- Try POI's own widget sets first, then the per-POI override
-    -- (Void Incursion → 2042; see ns.eventProgressWidgetSet in Data.lua).
+    -- (Void Incursion 8718 → 2042; see ns.eventProgressWidgetSet in
+    -- Data.lua), then the by-name override (so 8717 Zul'Aman / future
+    -- zone variants share the same widget set without per-POI entries).
     local p = probe(ev.tooltipWidgetSet)
               or probe(ev.iconWidgetSet)
     if p then return p end
     local overrideSet = ev.areaPoiID and ns.eventProgressWidgetSet
                         and ns.eventProgressWidgetSet[ev.areaPoiID]
-    return probe(overrideSet)
+    p = probe(overrideSet)
+    if p then return p end
+    local nameSet = ev.name and ns.eventProgressWidgetSetByName
+                    and ns.eventProgressWidgetSetByName[ev.name]
+    return probe(nameSet)
 end
 
 -- Parse "Story Variant: <name>" out of a delve POI's tooltipWidgetSet.
@@ -406,7 +412,7 @@ local function GetSoonest()
     if ns.IsEventFiring then
         for _, ev in ipairs(active) do
             local progPct = GetEventProgressPct(ev)
-            if ns.IsEventFiring(ev.areaPoiID, progPct) then
+            if ns.IsEventFiring(ev, progPct) then
                 return ev, nil, "firing"
             end
         end
@@ -698,7 +704,7 @@ local function BuildTooltip()
             local secs, kind = EventRemaining(ev, now)
             local progPct = GetEventProgressPct(ev)
             local firing = ns.IsEventFiring
-                           and ns.IsEventFiring(ev.areaPoiID, progPct)
+                           and ns.IsEventFiring(ev, progPct)
             if isLongTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
