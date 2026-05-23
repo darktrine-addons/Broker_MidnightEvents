@@ -317,44 +317,42 @@ local function IsWeeklySlotDone(w)
     return false
 end
 
--- Find the Liadrin pool questIDs from ns.weeklies. Returns a set for O(1)
--- lookup, or nil if the Liadrin row isn't defined.
-local function GetLiadrinPool()
-    for _, w in ipairs(ns.weeklies or {}) do
-        if w.key == "liadrin" and w.questIDs then
-            local set = {}
-            for _, qid in ipairs(w.questIDs) do set[qid] = true end
-            return set
-        end
-    end
-    return nil
-end
-
--- Detect which Liadrin pool member the current char has accepted (or
--- completed) this week. Stored on ns.char.liadrinChoice as the questID;
--- the tooltip looks up ns.liadrinLabels for a human-friendly annotation.
--- Cleared only when the cached choice is no longer in the active log AND
--- not flagged complete (covers the case where the user abandoned without
--- picking another).
-local function DetectLiadrinChoice()
+-- Detect which pool member the current char has accepted (or completed)
+-- this week for every ns.weeklies entry with a `picks` map. Stored on
+-- ns.char.picks[<key>] = questID; the tooltip then looks up
+-- weeklyEntry.picks[questID] for the human-friendly annotation.
+-- A cached pick is retained when the quest is no longer in the active
+-- log but IS flagged complete (so the "(X picked)" annotation persists
+-- next to the green checkmark for the rest of the week). A cached pick
+-- that's neither active nor complete was abandoned — drop it.
+-- Single quest-log walk handles every picks-flagged weekly at once.
+local function DetectWeeklyPicks()
     if not (ns.char and C_QuestLog) then return end
-    local pool = GetLiadrinPool()
-    if not pool then return end
+    ns.char.picks = ns.char.picks or {}
 
+    local pickedNow = {}
     for i = 1, C_QuestLog.GetNumQuestLogEntries() do
         local q = C_QuestLog.GetInfo(i)
-        if q and not q.isHeader and pool[q.questID] then
-            ns.char.liadrinChoice = q.questID
-            return
+        if q and not q.isHeader and q.questID then
+            for _, w in ipairs(ns.weeklies or {}) do
+                if w.picks and w.picks[q.questID] then
+                    pickedNow[w.key] = q.questID
+                end
+            end
         end
     end
 
-    -- Not in active log. Keep the cached choice if it's flagged complete
-    -- (the user completed it; we still want the "(X picked)" annotation
-    -- next to the green checkmark). Otherwise it was abandoned — clear.
-    local prev = ns.char.liadrinChoice
-    if prev and not C_QuestLog.IsQuestFlaggedCompleted(prev) then
-        ns.char.liadrinChoice = nil
+    for _, w in ipairs(ns.weeklies or {}) do
+        if w.picks then
+            if pickedNow[w.key] then
+                ns.char.picks[w.key] = pickedNow[w.key]
+            else
+                local prev = ns.char.picks[w.key]
+                if prev and not C_QuestLog.IsQuestFlaggedCompleted(prev) then
+                    ns.char.picks[w.key] = nil
+                end
+            end
+        end
     end
 end
 
@@ -363,7 +361,7 @@ local function RefreshWeeklies()
         return
     end
 
-    DetectLiadrinChoice()
+    DetectWeeklyPicks()
 
     -- Per-row binary weeklies.
     ns.char.weeklies = ns.char.weeklies or {}
@@ -937,30 +935,29 @@ local function BuildTooltip()
         if hasWeeklies then
             for _, w in ipairs(ns.weeklies) do
                 local rowLabel = w.label
-                -- Liadrin row: append "(X picked)" annotation when the
-                -- current char has accepted (or completed) a pool member,
-                -- with concise N/M progress when the active quest exposes
-                -- a >1 numeric objective (e.g. "(Delves picked, 1/3)").
-                -- numRequired <= 1 is omitted — for binary objectives the
-                -- "picked" tag already conveys all the state worth showing.
-                if w.key == "liadrin"
-                   and ns.char and ns.char.liadrinChoice
-                   and ns.liadrinLabels then
-                    local picked = ns.liadrinLabels[ns.char.liadrinChoice]
-                    if picked then
-                        local annotation = picked .. " picked"
-                        if C_QuestLog and C_QuestLog.GetQuestObjectives then
-                            local objs = C_QuestLog.GetQuestObjectives(ns.char.liadrinChoice)
-                            if objs and objs[1]
-                               and not objs[1].finished
-                               and objs[1].numRequired and objs[1].numRequired > 1 then
-                                annotation = annotation .. ", "
-                                             .. (objs[1].numFulfilled or 0)
-                                             .. "/" .. objs[1].numRequired
-                            end
+                -- Pool-pick annotation: any ns.weeklies entry with a
+                -- `picks` map (Liadrin, Bonus Event Weekly, etc.) gets
+                -- "(<choice> picked, N/M)" appended when the current char
+                -- has accepted (or completed) one of the pool members.
+                -- Progress is omitted for finished objectives (the row's
+                -- ✓/✗ already conveys completion) and for binary
+                -- objectives (numRequired <= 1) where N/M adds no info.
+                local pickedID = w.picks and ns.char and ns.char.picks
+                                 and ns.char.picks[w.key]
+                local pickedLabel = pickedID and w.picks[pickedID]
+                if pickedLabel then
+                    local annotation = pickedLabel .. " picked"
+                    if C_QuestLog and C_QuestLog.GetQuestObjectives then
+                        local objs = C_QuestLog.GetQuestObjectives(pickedID)
+                        if objs and objs[1]
+                           and not objs[1].finished
+                           and objs[1].numRequired and objs[1].numRequired > 1 then
+                            annotation = annotation .. ", "
+                                         .. (objs[1].numFulfilled or 0)
+                                         .. "/" .. objs[1].numRequired
                         end
-                        rowLabel = rowLabel .. " (" .. annotation .. ")"
                     end
+                    rowLabel = rowLabel .. " (" .. annotation .. ")"
                 end
                 rows[#rows + 1] = {
                     label = rowLabel,

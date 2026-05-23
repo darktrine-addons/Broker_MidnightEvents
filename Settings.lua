@@ -113,6 +113,15 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.eventScheduledToday      = nil
     char.eventScheduledResetEpoch = nil
 
+    -- Migration: the previous Liadrin-only pick tracker (char.liadrinChoice)
+    -- was generalized into char.picks[<weeklyKey>] when the Bonus Event
+    -- Weekly row landed. Lift any legacy value into the new shape.
+    if char.liadrinChoice and (not char.picks or not char.picks.liadrin) then
+        char.picks = char.picks or {}
+        char.picks.liadrin = char.liadrinChoice
+    end
+    char.liadrinChoice = nil
+
     ns.char = char
 
     -- Phase 8: Alts detail panel geometry. Lazily applied when the panel

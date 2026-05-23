@@ -40,10 +40,13 @@ ns.weeklies = {
     { key = "stormarion",      questID = 94581, label = "Stand Your Ground",  short = "SYG" },
     { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task", short = "NightT" },
 
-    -- Lady Liadrin's choice pool. She offers ~4 of 7 per char per week;
+    -- Lady Liadrin's choice pool. She offers ~4 of 8 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward
-    -- Spark of Radiance + Apex Cache.
-    { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW", questIDs = {
+    -- Spark of Radiance + Apex Cache. The `picks` map enables Core's
+    -- generic DetectWeeklyPicks scan + the "(<choice> picked, N/M)"
+    -- annotation in This Week.
+    { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW",
+      questIDs = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
           93892,  -- Midnight: Stormarion Assault
@@ -52,7 +55,37 @@ ns.weeklies = {
           93911,  -- Midnight: Dungeons
           94457,  -- Midnight: Battlegrounds
           95842,  -- Midnight: Void Assaults
-      } },
+      },
+      picks = {
+          [93769] = "Housing",
+          [93889] = "Soiree",
+          [93892] = "Stormarion",
+          [93909] = "Delves",
+          [93910] = "Prey",
+          [93911] = "Dungeons",
+          [94457] = "Battlegrounds",
+          [95842] = "Void Assaults",
+      },
+    },
+
+    -- Bonus Event Weekly — separate system from Liadrin's pool. One bonus
+    -- event is active per week on a 7-event rotation; reward varies by
+    -- event type (Cache of Quel'Thalas Treasures for some, Mark of
+    -- Honor/Conquest for PvP, etc.). Giver: Archmage Aethas Sunreaver in
+    -- Silvermoon. The "A Call to X" naming covers only 2 of the 7 events
+    -- (Delves, Battle); the others use different names (The Arena Calls,
+    -- The World Awaits, The Very Best, Emissary of War, Timewalking).
+    -- Expand questIDs/picks as those quest IDs surface via harvest.
+    { key = "bonusEvent", label = "Bonus Event Weekly", short = "BonusW",
+      questIDs = {
+          93595,  -- A Call to Delves (5 Midnight Delves)
+          93593,  -- A Call to Battle (4 BG wins)
+      },
+      picks = {
+          [93595] = "Delves",
+          [93593] = "Battle",
+      },
+    },
 
     -- Void Assault zone-rotation weekly. The active zone changes weekly
     -- (12.0.5 design note); each zone has its own questID. Harandar /
@@ -220,19 +253,9 @@ function ns.IsEventFiring(areaPoiID, progPct)
     return false
 end
 
--- Lady Liadrin pool member → human-friendly short label. Used by the
--- tooltip to annotate the Liadrin row with which choice the current char
--- picked this week (e.g. "Lady Liadrin's Weekly (Delves picked)").
-ns.liadrinLabels = {
-    [93769] = "Housing",
-    [93889] = "Soiree",
-    [93892] = "Stormarion",
-    [93909] = "Delves",
-    [93910] = "Prey",
-    [93911] = "Dungeons",
-    [94457] = "Battlegrounds",
-    [95842] = "Void Assaults",
-}
+-- (Previously: ns.liadrinLabels — moved inline into the Liadrin entry
+-- in ns.weeklies above. Each pool entry now carries its own `picks` map
+-- so the same render path serves both Liadrin and the Bonus Event row.)
 
 -- Candidate weeklies awaiting promotion (and out-of-scope IDs ceded to
 -- Midnight Routine) used to live here as commented-out tables. Both lists
