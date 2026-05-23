@@ -8,7 +8,7 @@
 ## Category-enUS: Data Broker
 ## X-Curse-Project-ID: 1545615
 ## X-Wago-ID: v633wk6b
-## SavedVariables: Broker_MidnightEventsDB#@debug@ Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue#@end-debug@
+## SavedVariables: Broker_MidnightEventsDB Broker_MidnightEventsHarvest Broker_MidnightEventsQuestCatalogue
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
