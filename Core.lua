@@ -958,39 +958,56 @@ local function BuildTooltip()
         if hasWeeklies then
             for _, w in ipairs(ns.weeklies) do
                 local rowLabel = w.label
-                -- Pool-pick annotation: any ns.weeklies entry with a
-                -- `picks` map (Liadrin, Bonus Event Weekly, Void Assault
-                -- zone, etc.) gets "(<choice>)" appended when this char
-                -- has accepted (or completed) one of the pool members.
-                -- Format defaults to "(<choice> picked, N/M)" — for the
-                -- Liadrin / Bonus Event "you pick one" flavor — with
-                -- progress N/M added when the active quest exposes a >1
-                -- numeric unfinished objective.
-                -- picksFormat = "zoneOnly" suppresses both the " picked"
-                -- suffix and the N/M, rendering just "(<zone name>)" —
-                -- used by voidAssaultZone where the choice isn't really
-                -- a pick (server-determined) and the label IS the value.
+                -- Annotation color hierarchy:
+                --   * Row name (white, set by AddDoubleLine) — the
+                --     actionable label
+                --   * Static hint + dynamic-annotation text + parens
+                --     (grey #909090) — context / disambiguation, fades
+                --     so the row name reads first
+                --   * Progress N/M (warm gold #d9c97f) — variable data
+                --     the eye should land on within the grey
+                --
+                -- Per-row annotation rules:
+                --   * `picks` present + picksFormat="zoneOnly" → grey
+                --     "(<zone>)" — voidAssaultZone
+                --   * `picks` present (default) → grey "(<choice> picked"
+                --     + gold ", N/M" (when active quest has >1 unfinished
+                --     objective) + grey ")" — Liadrin / Bonus Event
+                --   * else `hint` present → grey "(<hint>)" — static
+                --     disambiguation for opaque weekly names
+                --     (Stand Your Ground → Stormarion Assault, etc.)
+                local DIM_OPEN  = "|cff909090"
+                local PROG_OPEN = "|cffd9c97f"
+                local CLOSE     = "|r"
+
                 local pickedID = w.picks and ns.char and ns.char.picks
                                  and ns.char.picks[w.key]
                 local pickedLabel = pickedID and w.picks[pickedID]
+
                 if pickedLabel then
-                    local annotation
                     if w.picksFormat == "zoneOnly" then
-                        annotation = pickedLabel
+                        rowLabel = rowLabel .. " "
+                                   .. DIM_OPEN .. "(" .. pickedLabel .. ")" .. CLOSE
                     else
-                        annotation = pickedLabel .. " picked"
+                        local body = pickedLabel .. " picked"
+                        local progSeg = ""
                         if C_QuestLog and C_QuestLog.GetQuestObjectives then
                             local objs = C_QuestLog.GetQuestObjectives(pickedID)
                             if objs and objs[1]
                                and not objs[1].finished
                                and objs[1].numRequired and objs[1].numRequired > 1 then
-                                annotation = annotation .. ", "
-                                             .. (objs[1].numFulfilled or 0)
-                                             .. "/" .. objs[1].numRequired
+                                progSeg = ", " .. CLOSE .. PROG_OPEN
+                                          .. (objs[1].numFulfilled or 0)
+                                          .. "/" .. objs[1].numRequired
+                                          .. CLOSE .. DIM_OPEN
                             end
                         end
+                        rowLabel = rowLabel .. " "
+                                   .. DIM_OPEN .. "(" .. body .. progSeg .. ")" .. CLOSE
                     end
-                    rowLabel = rowLabel .. " (" .. annotation .. ")"
+                elseif w.hint then
+                    rowLabel = rowLabel .. " "
+                               .. DIM_OPEN .. "(" .. w.hint .. ")" .. CLOSE
                 end
                 rows[#rows + 1] = {
                     label = rowLabel,

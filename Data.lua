@@ -36,9 +36,11 @@ end
 --   { questIDs = {a, b…} } — pool/rotation slot; row done iff any member flagged
 -- Refreshed on PLAYER_ENTERING_WORLD, QUEST_TURNED_IN, QUEST_REMOVED.
 ns.weeklies = {
-    { key = "abundance",       questID = 89507, label = "Abundant Offerings", short = "AbunO" },
-    { key = "stormarion",      questID = 94581, label = "Stand Your Ground",  short = "SYG" },
-    { key = "preyNightmare",   questID = 94446, label = "A Nightmarish Task", short = "NightT" },
+    { key = "abundance",     questID = 89507, label = "Abundant Offerings",  short = "AbunO" },
+    { key = "stormarion",    questID = 94581, label = "Stand Your Ground",   short = "SYG",
+      hint = "Stormarion Assault" },
+    { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task",  short = "NightT",
+      hint = "Prey Hunts" },
 
     -- Lady Liadrin's choice pool. She offers ~4 of 8 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward
@@ -107,7 +109,8 @@ ns.weeklies = {
       picksFormat = "zoneOnly",
     },
 
-    { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "LL" },
+    { key = "haranir",       questID = 89268, label = "Lost Legends",        short = "LL",
+      hint = "Legends of the Haranir" },
 }
 
 -- Last-resort POI name lookup. C_AreaPoiInfo.GetAreaPOIInfo returns nil
