@@ -49,6 +49,7 @@ ns.weeklies = {
       questIDs = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
+          93890,  -- Midnight: Abundance
           93892,  -- Midnight: Stormarion Assault
           93909,  -- Midnight: Delves
           93910,  -- Midnight: Prey
@@ -59,6 +60,7 @@ ns.weeklies = {
       picks = {
           [93769] = "Housing",
           [93889] = "Soiree",
+          [93890] = "Abundance",
           [93892] = "Stormarion",
           [93909] = "Delves",
           [93910] = "Prey",
