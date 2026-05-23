@@ -159,15 +159,48 @@ end
 -- stay inside the taint-isolated ticker context.
 local activeStoryByDelve = {}
 
+-- Cheap Levenshtein distance between two strings; used by the delve-story
+-- matcher below to tolerate single-character typos in Blizzard's widget
+-- data versus their own achievement criterion text. Bounded input length
+-- (~30 chars per story name) keeps the O(n*m) cost trivial.
+local function levenshtein(a, b)
+    if a == b then return 0 end
+    if #a == 0 then return #b end
+    if #b == 0 then return #a end
+    local prev = {}
+    for j = 0, #b do prev[j] = j end
+    for i = 1, #a do
+        local curr = { [0] = i }
+        local ach = a:sub(i, i)
+        for j = 1, #b do
+            local cost = (ach == b:sub(j, j)) and 0 or 1
+            curr[j] = math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+        end
+        prev = curr
+    end
+    return prev[#b]
+end
+
 -- Per-character completion lookup for a (delveName, storyName) pair.
 -- Indexes into ns.delveStoryAchievement (Data.lua) to find the per-delve
 -- sub-achievement, iterates its criteria, returns the completed boolean
--- of the criterion whose name matches the story variant. Returns nil if:
+-- of the criterion whose name matches the story variant.
+--
+-- Match policy: exact case-sensitive equality first, then fuzzy
+-- (Levenshtein ≤ 2 against lowercased forms). The fuzzy fallback
+-- absorbs Blizzard typos like "Captured Widlife" (in the widget) vs
+-- "Captured Wildlife" (in the achievement criterion) — observed on
+-- Shadowguard Point 2026-05-23. Two criteria per achievement have
+-- always been visibly distinct, so a 2-edit allowance can't realistically
+-- collide.
+--
+-- Returns nil when:
 --   * The delve isn't in our achievement map
---   * The achievement criteria aren't yet loaded (returns nil from the
---     Blizzard API until the player has opened the Achievement UI once
---     or the cached data is otherwise warm — we render "(story)" without
---     a ✓/✗ in that case)
+--   * The criteria aren't yet loaded (Blizzard lazy-loads per-achievement;
+--     until the player has engaged with the delve's content,
+--     GetAchievementCriteriaInfo returns nil → row renders grey)
+--   * No criterion within the fuzzy threshold matches
+local FUZZY_MATCH_THRESHOLD = 2
 local function GetDelveStoryCompletion(delveName, storyName)
     if not (ns.delveStoryAchievement and GetAchievementCriteriaInfo) then
         return nil
@@ -176,9 +209,23 @@ local function GetDelveStoryCompletion(delveName, storyName)
     if not achievementID then return nil end
     local n = GetAchievementNumCriteria
               and GetAchievementNumCriteria(achievementID) or 3
+
+    local lowerStory = storyName:lower()
+    local bestDist, bestCompleted = FUZZY_MATCH_THRESHOLD + 1, nil
     for i = 1, n do
         local criteriaString, _, completed = GetAchievementCriteriaInfo(achievementID, i)
-        if criteriaString == storyName then return completed end
+        if criteriaString then
+            if criteriaString == storyName then
+                return completed
+            end
+            local d = levenshtein(criteriaString:lower(), lowerStory)
+            if d < bestDist then
+                bestDist, bestCompleted = d, completed
+            end
+        end
+    end
+    if bestDist <= FUZZY_MATCH_THRESHOLD then
+        return bestCompleted
     end
     return nil
 end
