@@ -133,6 +133,20 @@ sf:SetScript("OnEvent", function(self, event, name)
     }
     if db.altsPanel.bgAlpha == nil then db.altsPanel.bgAlpha = 0.6 end
 
+    -- Pre-warm achievement criteria so the delve-story annotations on the
+    -- Bountiful Delves rows can render with definite "done / not-done"
+    -- colors instead of the grey "unknown" placeholder. WoW lazy-loads
+    -- per-achievement criteria when the player first engages with the
+    -- relevant content; for delves the player has never run,
+    -- GetAchievementCriteriaInfo returns nil until something forces a
+    -- load. Loading Blizzard_AchievementUI here triggers the full
+    -- achievement catalog population early, so by the time the tooltip
+    -- first opens later in the session the criteria are warm.
+    if C_AddOns and C_AddOns.LoadAddOn
+       and not (C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_AchievementUI")) then
+        C_AddOns.LoadAddOn("Blizzard_AchievementUI")
+    end
+
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state. Voidforge entries
     -- scoped "weekly" (e.g. Voidcores 0/N) reset their value to 0; their
