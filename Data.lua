@@ -92,10 +92,20 @@ ns.weeklies = {
     -- Void Assault zone-rotation weekly. The active zone changes weekly
     -- (12.0.5 design note); each zone has its own questID. Harandar /
     -- Voidstorm variants likely exist; add when harvest reveals them.
-    { key = "voidAssaultZone", label = "Void Assault (active zone)", short = "VoidA", questIDs = {
+    -- `picks` + `picksFormat = "zoneOnly"` makes the render append the
+    -- active zone name directly — "Void Assault (Zul'Aman)" — instead
+    -- of the generic "(active zone)" placeholder we used before.
+    { key = "voidAssaultZone", label = "Void Assault", short = "VoidA",
+      questIDs = {
           94385,  -- Void Assaults: Eversong Woods
           94386,  -- Void Assaults: Zul'Aman
-      } },
+      },
+      picks = {
+          [94385] = "Eversong Woods",
+          [94386] = "Zul'Aman",
+      },
+      picksFormat = "zoneOnly",
+    },
 
     { key = "haranir",         questID = 89268, label = "Lost Legends",       short = "LL" },
 }

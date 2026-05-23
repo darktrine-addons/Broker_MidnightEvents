@@ -942,25 +942,35 @@ local function BuildTooltip()
             for _, w in ipairs(ns.weeklies) do
                 local rowLabel = w.label
                 -- Pool-pick annotation: any ns.weeklies entry with a
-                -- `picks` map (Liadrin, Bonus Event Weekly, etc.) gets
-                -- "(<choice> picked, N/M)" appended when the current char
+                -- `picks` map (Liadrin, Bonus Event Weekly, Void Assault
+                -- zone, etc.) gets "(<choice>)" appended when this char
                 -- has accepted (or completed) one of the pool members.
-                -- Progress is omitted for finished objectives (the row's
-                -- ✓/✗ already conveys completion) and for binary
-                -- objectives (numRequired <= 1) where N/M adds no info.
+                -- Format defaults to "(<choice> picked, N/M)" — for the
+                -- Liadrin / Bonus Event "you pick one" flavor — with
+                -- progress N/M added when the active quest exposes a >1
+                -- numeric unfinished objective.
+                -- picksFormat = "zoneOnly" suppresses both the " picked"
+                -- suffix and the N/M, rendering just "(<zone name>)" —
+                -- used by voidAssaultZone where the choice isn't really
+                -- a pick (server-determined) and the label IS the value.
                 local pickedID = w.picks and ns.char and ns.char.picks
                                  and ns.char.picks[w.key]
                 local pickedLabel = pickedID and w.picks[pickedID]
                 if pickedLabel then
-                    local annotation = pickedLabel .. " picked"
-                    if C_QuestLog and C_QuestLog.GetQuestObjectives then
-                        local objs = C_QuestLog.GetQuestObjectives(pickedID)
-                        if objs and objs[1]
-                           and not objs[1].finished
-                           and objs[1].numRequired and objs[1].numRequired > 1 then
-                            annotation = annotation .. ", "
-                                         .. (objs[1].numFulfilled or 0)
-                                         .. "/" .. objs[1].numRequired
+                    local annotation
+                    if w.picksFormat == "zoneOnly" then
+                        annotation = pickedLabel
+                    else
+                        annotation = pickedLabel .. " picked"
+                        if C_QuestLog and C_QuestLog.GetQuestObjectives then
+                            local objs = C_QuestLog.GetQuestObjectives(pickedID)
+                            if objs and objs[1]
+                               and not objs[1].finished
+                               and objs[1].numRequired and objs[1].numRequired > 1 then
+                                annotation = annotation .. ", "
+                                             .. (objs[1].numFulfilled or 0)
+                                             .. "/" .. objs[1].numRequired
+                            end
                         end
                     end
                     rowLabel = rowLabel .. " (" .. annotation .. ")"
