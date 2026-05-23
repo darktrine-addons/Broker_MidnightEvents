@@ -133,19 +133,16 @@ sf:SetScript("OnEvent", function(self, event, name)
     }
     if db.altsPanel.bgAlpha == nil then db.altsPanel.bgAlpha = 0.6 end
 
-    -- Pre-warm achievement criteria so the delve-story annotations on the
-    -- Bountiful Delves rows can render with definite "done / not-done"
-    -- colors instead of the grey "unknown" placeholder. WoW lazy-loads
-    -- per-achievement criteria when the player first engages with the
-    -- relevant content; for delves the player has never run,
-    -- GetAchievementCriteriaInfo returns nil until something forces a
-    -- load. Loading Blizzard_AchievementUI here triggers the full
-    -- achievement catalog population early, so by the time the tooltip
-    -- first opens later in the session the criteria are warm.
-    if C_AddOns and C_AddOns.LoadAddOn
-       and not (C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_AchievementUI")) then
-        C_AddOns.LoadAddOn("Blizzard_AchievementUI")
-    end
+    -- Note: we considered pre-warming the achievement catalog with
+    -- LoadAddOn("Blizzard_AchievementUI") at init so the delve-story
+    -- annotations could render definite colors for never-engaged delves.
+    -- Empirically (2026-05-23) loading the UI module is NOT sufficient —
+    -- WoW genuinely lazy-loads per-achievement criteria only when the
+    -- player engages with the content (runs that delve, scrolls to the
+    -- achievement in the UI, etc.). For our case, that means the grey
+    -- "unknown" fallback color persists for delves the character has
+    -- never run — accepted as the honest signal rather than guessing
+    -- wrong with a "not done" gold colour.
 
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state. Voidforge entries
