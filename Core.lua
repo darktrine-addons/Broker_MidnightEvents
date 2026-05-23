@@ -327,16 +327,24 @@ end
 -- this week for every ns.weeklies entry with a `picks` map. Stored on
 -- ns.char.picks[<key>] = questID; the tooltip then looks up
 -- weeklyEntry.picks[questID] for the human-friendly annotation.
--- A cached pick is retained when the quest is no longer in the active
--- log but IS flagged complete (so the "(X picked)" annotation persists
--- next to the green checkmark for the rest of the week). A cached pick
--- that's neither active nor complete was abandoned — drop it.
--- Single quest-log walk handles every picks-flagged weekly at once.
+--
+-- Detection is fully self-healing — every refresh re-derives picks from
+-- current game state, with no reliance on the previously-cached value.
+-- Two-pass scan:
+--   1. Walk the active quest log; any in-log pool member wins.
+--   2. For entries with no active-log match, check IsQuestFlaggedCompleted
+--      on each pool member. Catches the post-turn-in window (quest left
+--      the log but weekly reset hasn't fired yet) AND retroactively
+--      catches characters who completed the quest before the `picks`
+--      feature was deployed — no migration needed.
+-- Anything not surfaced by either pass clears.
 local function DetectWeeklyPicks()
     if not (ns.char and C_QuestLog) then return end
     ns.char.picks = ns.char.picks or {}
 
     local pickedNow = {}
+
+    -- Pass 1: active quest log.
     for i = 1, C_QuestLog.GetNumQuestLogEntries() do
         local q = C_QuestLog.GetInfo(i)
         if q and not q.isHeader and q.questID then
@@ -348,16 +356,25 @@ local function DetectWeeklyPicks()
         end
     end
 
+    -- Pass 2: completion-state fallback for entries with no active-log
+    -- match. Pool members are mutually exclusive within a weekly cycle
+    -- (the player can only have/complete one per week), so the first
+    -- complete-flagged member is authoritative.
     for _, w in ipairs(ns.weeklies or {}) do
-        if w.picks then
-            if pickedNow[w.key] then
-                ns.char.picks[w.key] = pickedNow[w.key]
-            else
-                local prev = ns.char.picks[w.key]
-                if prev and not C_QuestLog.IsQuestFlaggedCompleted(prev) then
-                    ns.char.picks[w.key] = nil
+        if w.picks and not pickedNow[w.key] then
+            for qid in pairs(w.picks) do
+                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                    pickedNow[w.key] = qid
+                    break
                 end
             end
+        end
+    end
+
+    -- Write through (nil clears).
+    for _, w in ipairs(ns.weeklies or {}) do
+        if w.picks then
+            ns.char.picks[w.key] = pickedNow[w.key]
         end
     end
 end
