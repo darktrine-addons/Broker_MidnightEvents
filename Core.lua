@@ -938,13 +938,28 @@ local function BuildTooltip()
             for _, w in ipairs(ns.weeklies) do
                 local rowLabel = w.label
                 -- Liadrin row: append "(X picked)" annotation when the
-                -- current char has accepted (or completed) a pool member.
+                -- current char has accepted (or completed) a pool member,
+                -- with concise N/M progress when the active quest exposes
+                -- a >1 numeric objective (e.g. "(Delves picked, 1/3)").
+                -- numRequired <= 1 is omitted — for binary objectives the
+                -- "picked" tag already conveys all the state worth showing.
                 if w.key == "liadrin"
                    and ns.char and ns.char.liadrinChoice
                    and ns.liadrinLabels then
                     local picked = ns.liadrinLabels[ns.char.liadrinChoice]
                     if picked then
-                        rowLabel = rowLabel .. " (" .. picked .. " picked)"
+                        local annotation = picked .. " picked"
+                        if C_QuestLog and C_QuestLog.GetQuestObjectives then
+                            local objs = C_QuestLog.GetQuestObjectives(ns.char.liadrinChoice)
+                            if objs and objs[1]
+                               and not objs[1].finished
+                               and objs[1].numRequired and objs[1].numRequired > 1 then
+                                annotation = annotation .. ", "
+                                             .. (objs[1].numFulfilled or 0)
+                                             .. "/" .. objs[1].numRequired
+                            end
+                        end
+                        rowLabel = rowLabel .. " (" .. annotation .. ")"
                     end
                 end
                 rows[#rows + 1] = {

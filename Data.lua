@@ -48,6 +48,7 @@ ns.weeklies = {
           93889,  -- Midnight: Saltheril's Soiree
           93892,  -- Midnight: Stormarion Assault
           93909,  -- Midnight: Delves
+          93910,  -- Midnight: Prey
           93911,  -- Midnight: Dungeons
           94457,  -- Midnight: Battlegrounds
           95842,  -- Midnight: Void Assaults
@@ -227,6 +228,7 @@ ns.liadrinLabels = {
     [93889] = "Soiree",
     [93892] = "Stormarion",
     [93909] = "Delves",
+    [93910] = "Prey",
     [93911] = "Dungeons",
     [94457] = "Battlegrounds",
     [95842] = "Void Assaults",
