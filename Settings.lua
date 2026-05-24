@@ -156,6 +156,15 @@ sf:SetScript("OnEvent", function(self, event, name)
         char.worldBoss   = { done = false }
         char.weeklies    = {}
         char.weeklyReset = currentReset
+        -- Picks cache must reset too: pool quest completion flags don't
+        -- reliably clear on weekly reset (Artherio's account showed all
+        -- 9 Liadrin pool members flagged simultaneously), so the
+        -- in-log-or-cached-flagged detection would otherwise carry last
+        -- week's pick into the new cycle indefinitely. Clearing here
+        -- starts each new week from a clean slate; the next time the
+        -- player accepts a Liadrin / Bonus Event / Void Assault quest
+        -- the pass-1 active-log scan refills it.
+        char.picks       = {}
         if char.voidforge and ns.charProgress then
             for _, entry in ipairs(ns.charProgress) do
                 if entry.scope == "weekly" and char.voidforge[entry.key] then

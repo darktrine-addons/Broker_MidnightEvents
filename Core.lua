@@ -406,23 +406,34 @@ end
 -- ns.char.picks[<key>] = questID; the tooltip then looks up
 -- weeklyEntry.picks[questID] for the human-friendly annotation.
 --
--- Detection is fully self-healing — every refresh re-derives picks from
--- current game state, with no reliance on the previously-cached value.
--- Two-pass scan:
---   1. Walk the active quest log; any in-log pool member wins.
---   2. For entries with no active-log match, check IsQuestFlaggedCompleted
---      on each pool member. Catches the post-turn-in window (quest left
---      the log but weekly reset hasn't fired yet) AND retroactively
---      catches characters who completed the quest before the `picks`
---      feature was deployed — no migration needed.
--- Anything not surfaced by either pass clears.
+-- Detection has two reliable signals:
+--   1. Active quest log scan — definitive. If a pool member is in the
+--      log right now, that's the pick.
+--   2. Cached-and-still-flagged preservation — covers the post-turn-in
+--      window. Once a pick is established by signal #1 and the quest
+--      gets turned in, the quest leaves the log but its completion
+--      flag stays true. Keep the cached pick across that transition.
+--
+-- We *deliberately do not* fall back to "any pool member flagged
+-- complete" — verified 2026-05-24 on Artherio that all 9 Liadrin pool
+-- member quest IDs (93769, 93889, 93890, 93892, 93909, 93910, 93911,
+-- 94457, 95842) returned IsQuestFlaggedCompleted = true at once. The
+-- flags are achievement-style and persist across weekly resets, so
+-- "any flagged" is meaningless once a player has rotated through
+-- multiple Liadrin picks over the season. Better to show no
+-- annotation than to guess wrong.
+--
+-- Cold-start consequence: a character who completed a Liadrin pick
+-- before the feature was deployed AND never opens the addon while
+-- the quest is in their log will display the row as done (the slot's
+-- own IsWeeklySlotDone signal) but without the "(<choice> picked)"
+-- annotation. Acceptable — the completion state is what matters.
 local function DetectWeeklyPicks()
     if not (ns.char and C_QuestLog) then return end
     ns.char.picks = ns.char.picks or {}
 
+    -- Pass 1: active quest log (definitive).
     local pickedNow = {}
-
-    -- Pass 1: active quest log.
     for i = 1, C_QuestLog.GetNumQuestLogEntries() do
         local q = C_QuestLog.GetInfo(i)
         if q and not q.isHeader and q.questID then
@@ -434,25 +445,19 @@ local function DetectWeeklyPicks()
         end
     end
 
-    -- Pass 2: completion-state fallback for entries with no active-log
-    -- match. Pool members are mutually exclusive within a weekly cycle
-    -- (the player can only have/complete one per week), so the first
-    -- complete-flagged member is authoritative.
-    for _, w in ipairs(ns.weeklies or {}) do
-        if w.picks and not pickedNow[w.key] then
-            for qid in pairs(w.picks) do
-                if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                    pickedNow[w.key] = qid
-                    break
-                end
-            end
-        end
-    end
-
-    -- Write through (nil clears).
+    -- Write through with cache preservation: if pass 1 found nothing
+    -- for an entry, keep the existing cached pick IFF its flag is
+    -- still true (post-turn-in case). Otherwise clear.
     for _, w in ipairs(ns.weeklies or {}) do
         if w.picks then
-            ns.char.picks[w.key] = pickedNow[w.key]
+            if pickedNow[w.key] then
+                ns.char.picks[w.key] = pickedNow[w.key]
+            else
+                local prev = ns.char.picks[w.key]
+                if not (prev and C_QuestLog.IsQuestFlaggedCompleted(prev)) then
+                    ns.char.picks[w.key] = nil
+                end
+            end
         end
     end
 end
