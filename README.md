@@ -34,7 +34,7 @@ Retail only. Requires Midnight (Interface 120005+). Works with any LibDataBroker
 - **Now** — currently-firing events, sorted by urgency: firing > closer-to-firing progress bars > soonest countdowns > untimed continuous (Stormarion Assault between waves, Legends of the Haranir, Prey, etc.).
 - **Upcoming (next 24h)** — scheduler-driven next fires, ordered by when they happen (matches Blizzard's events panel order).
 - **Bountiful Delves (today)** — today's rotation with each delve's active **story variant** in parentheses; a green ✓ next to the story name means this character has the matching achievement criterion (per-delve "Stories" achievement, 61724–61733) already completed.
-- **This Week (CharName)** — per-character weekly checklist: World Boss, Abundant Offerings, Stand Your Ground, A Nightmarish Task, Lady Liadrin's Weekly (with which choice you picked annotated), Void Assault active zone, Lost Legends. Outstanding rows up top in white, completed rows dim with a green ✓.
+- **This Week (CharName)** — per-character weekly checklist: World Boss, Abundant Offerings, Stand Your Ground, A Nightmarish Task, Lady Liadrin's Weekly (with which choice you picked annotated), Void Assault active zone, Lost Legends, Bonus Event Weekly. Outstanding rows up top in white, completed rows dim with a green ✓, and an amber `turn in!` state for weeklies whose objectives are done but the quest is still in your log waiting on handoff.
 - **Voidforge progress** — per-character N/M counters scraped from Decimus's bars in Voidstorm: *Voidcores transmuted* (weekly bonus-roll allowance), *Nilhammer empowered* (lifetime 0–4, gates the Ascendant Nilhammer upgrade). Only populates after the character has been near Decimus once; persists across sessions.
 - **Alts roll-up** — aggregate "X / Y done" per activity across every character you've logged into with the addon enabled. Stale chars (no login since the most recent weekly reset) are excluded so the aggregate reflects only fresh data.
 
@@ -49,6 +49,7 @@ Retail only. Requires Midnight (Interface 120005+). Works with any LibDataBroker
 - World Boss row visibility in the This Week section.
 - Broker bar split toggles (show weekly progress / show next-event tag).
 - Alts panel background opacity slider.
+- *Show hidden characters* toggle paired with the right-click-to-hide gesture in the Alts panel.
 
 ### Minimap button
 - Built-in via LibDBIcon — useful if you don't run a broker bar host. One-toggle off in settings (default on).
@@ -121,6 +122,30 @@ Issues and pull requests are welcome.
 Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full license text is in the `LICENSE` file in the source distribution.
 
 ## Changelog
+
+### v0.9.0-beta — feature-complete
+
+Polish + last functional gaps before v1.0 stable.
+
+**New features:**
+- **"Turn in!" indicator** on This Week rows. When a weekly's objectives are complete but the quest is still in the active log (you've done the work, haven't visited the NPC), the row renders amber `turn in!` between the in-progress and done states. Catches the "I thought I was done" confusion when objectives flip but `IsQuestFlaggedCompleted` waits on the handoff.
+- **Right-click any character row** in the detached Alts panel to hide it. Hidden characters disappear from the panel; a `"N hidden"` count surfaces in the panel summary. Companion *Settings → Alts panel → "Show hidden characters"* toggle (default off) brings them back as extra-dim rows that right-click un-hides. Useful for decluttering long-inactive alts without losing their data.
+
+### v0.7.0-beta
+
+**New features:**
+- **Bountiful Delves** now annotate each row with today's active **story variant** in parentheses; a green ✓ next to the story name means this character has the matching `<Delve> Stories` achievement criterion (61724–61733) completed. Fuzzy-matches story names against criterion text (Levenshtein ≤ 2) so Blizzard typos in widget data still resolve to the correct criterion.
+- **Void Assault** row shows the active rotating zone — *"Void Assault (Zul'Aman)"* / *"Void Assault (Eversong Woods)"* — instead of the generic "(active zone)" placeholder.
+- **Bonus Event Weekly** row tracking Archmage Aethas Sunreaver's weekly bonus-event quest (Cache of Quel'Thalas Treasures rewards). Same "(picked, N/M)" annotation as the Liadrin row.
+- **Lady Liadrin's pool** completed with the two missing pool members (`93890 Midnight: Abundance`, `93910 Midnight: Prey`).
+
+**Improvements:**
+- **Color-tiered This Week annotations:** row name (white) — actionable label; static hint + parens + dynamic-annotation text (grey) — context; progress N/M (warm gold) — variable data the eye should land on.
+- **Static disambiguation hints** on opaque-named rows: *Stand Your Ground (Stormarion Assault)*, *A Nightmarish Task (Prey Hunts)*, *Lost Legends (Legends of the Haranir)*.
+- **Void Incursion** progress + firing detection now matches by event name — every zone variant gets the same widget probe and heuristic without per-POI hardcoding.
+
+**Fixes:**
+- Pool-pick detection is fully self-healing — re-derives every refresh from current game state, so characters who completed a pool member before the feature was deployed retroactively display the correct annotation.
 
 ### v0.6.0-beta
 
