@@ -44,6 +44,79 @@ local function LooksLikeEventAtlas(atlas)
     return atlas and atlas:lower():find("^ui%-eventpoi%-") ~= nil
 end
 
+-- Widget-text timer fallback.
+--
+-- Some POIs (observed: Abundance: Mining Voidburrow, poiIDs 8675/8526) report
+-- IsAreaPOITimed=true but GetAreaPOISecondsLeft=nil. The countdown the user
+-- sees on the map tooltip is rendered from a TextWithState widget in the
+-- POI's tooltipWidgetSet, as the plain string "Time Left: 6 Hr 8 Min".
+--
+-- Parse that string to recover seconds. enUS pattern; non-English locales
+-- will miss the parse and the entry will continue to render as untimed
+-- "active" (current behaviour, no regression). If we ever care about non-
+-- English clients, swap to localized matches via GetLocale-keyed patterns.
+-- Strip Blizzard chat-escape codes before parsing widget text.
+--
+-- Observed widget payload:
+--   "|nTime Left: |cnHIGHLIGHT_FONT_COLOR:5 |4Hr:Hr; 58 |4Min:Min; |n"
+--
+-- Without stripping, `|4Hr:Hr;` (plural escape) contains a literal "4"
+-- digit that the Hr-parser would lift as the hours value, producing a
+-- frozen "4h 0m" regardless of the real countdown. Replace plural
+-- escapes with their singular form so "Hr"/"Min" tokens remain intact
+-- and the digits in front of them are the actual numbers.
+local function StripEscapes(s)
+    if type(s) ~= "string" then return s end
+    s = s:gsub("|n", " ")
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", "")
+    s = s:gsub("|cn[%w_]+:", "")
+    s = s:gsub("|r", "")
+    s = s:gsub("|4([^:]+):[^;]*;", "%1")
+    s = s:gsub("|H.-|h(.-)|h", "%1")
+    return s
+end
+
+-- Parse rendered countdown strings like "Time Left: 6 Hr 4 Min".
+-- Uses %D- (non-digit, lazy) instead of %s* because Blizzard tends to inject
+-- non-breaking spaces (U+00A0) in formatted time strings, and Lua's %s
+-- class only matches ASCII whitespace. If Hr is present in the text we
+-- require an Hr+Min parse and don't fall through to Min-only — otherwise
+-- "6 Hr 4 Min" would silently degrade to "4m" when the joined parse fails.
+local function ParseTimeLeftSeconds(text)
+    text = StripEscapes(text)
+    if type(text) ~= "string" then return nil end
+    if text:find("[Hh]r") then
+        local h, m = text:match("(%d+)%D-[Hh]r%D-(%d+)%D-[Mm]in")
+        if h and m then return tonumber(h) * 3600 + tonumber(m) * 60 end
+        local hOnly = text:match("(%d+)%D-[Hh]r")
+        if hOnly then return tonumber(hOnly) * 3600 end
+        return nil
+    end
+    local mOnly = text:match("(%d+)%D-[Mm]in")
+    if mOnly then return tonumber(mOnly) * 60 end
+    local sOnly = text:match("(%d+)%D-[Ss]ec")
+    if sOnly then return tonumber(sOnly) end
+    return nil
+end
+
+local function SecondsFromWidgetSet(setID)
+    if not (setID and C_UIWidgetManager
+            and C_UIWidgetManager.GetAllWidgetsBySetID) then
+        return nil
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    local getText = C_UIWidgetManager.GetTextWithStateWidgetVisualizationInfo
+    if not getText then return nil end
+    for _, w in ipairs(widgets) do
+        -- 8 = TextWithState. Read via the official getter rather than
+        -- guessing the type id, in case the enum shifts in a future patch.
+        local info = getText(w.widgetID)
+        local secs = info and ParseTimeLeftSeconds(info.text)
+        if secs then return secs end
+    end
+    return nil
+end
+
 local function FireChanged()
     for i = 1, #listeners do
         local ok, err = pcall(listeners[i])
@@ -137,6 +210,9 @@ local function ResolvePoi(areaPoiID, displayInfo)
     if isTimed and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOISecondsLeft then
         secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(areaPoiID)
     end
+    if isTimed and not secondsLeft then
+        secondsLeft = SecondsFromWidgetSet(widgetSet)
+    end
 
     if not (name or atlas or zone) then return nil end
 
@@ -187,6 +263,9 @@ local function BuildMapEntry(poiID, info, mapID)
     local secondsLeft
     if isTimed and C_AreaPoiInfo.GetAreaPOISecondsLeft then
         secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
+    end
+    if isTimed and not secondsLeft then
+        secondsLeft = SecondsFromWidgetSet(info.tooltipWidgetSet)
     end
     return {
         source           = "map-event",
