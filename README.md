@@ -123,6 +123,13 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.1-beta — bugfix refresh
+
+**Fixes:**
+- **Mining Voidburrow timer** now shows a real countdown instead of bare "active." Reads the timer from the POI's tooltip widget when Blizzard's seconds-left API returns nil.
+- **Liadrin's Weekly pick** no longer drifts to the wrong pool member on characters who have rotated through picks over multiple weeks. Derives strictly from the active quest log.
+- **Abandoning a weekly** now clears the cached "(picked)" annotation immediately, instead of waiting until turn-in.
+
 ### v0.9.0-beta — feature-complete
 
 Polish + last functional gaps before v1.0 stable.
