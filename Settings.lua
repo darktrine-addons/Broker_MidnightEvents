@@ -132,6 +132,8 @@ sf:SetScript("OnEvent", function(self, event, name)
         point = "CENTER", x = 0, y = 0,
     }
     if db.altsPanel.bgAlpha == nil then db.altsPanel.bgAlpha = 0.6 end
+    if db.altsPanel.showHidden == nil then db.altsPanel.showHidden = false end
+    db.hiddenChars = db.hiddenChars or {}
 
     -- Note: we considered pre-warming the achievement catalog with
     -- LoadAddOn("Blizzard_AchievementUI") at init so the delve-story
@@ -245,6 +247,23 @@ sf:SetScript("OnEvent", function(self, event, name)
     Settings.CreateSlider(category, altsAlphaSetting, sliderOptions,
         "Background opacity for the detached Alts panel (Shift-RightClick on the broker). "
         .. "Lower = more see-through.")
+
+    -- "Show hidden characters" toggle — paired with the right-click-row-
+    -- to-hide gesture in the Alts panel. When off, hidden chars are
+    -- omitted entirely from the panel. When on, they appear extra-dim
+    -- and right-clicking them again flips them back to visible.
+    local altsShowHiddenSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_altsPanelShowHidden", "showHidden", db.altsPanel,
+        Settings.VarType.Boolean, "Show hidden characters",
+        false)
+    altsShowHiddenSetting:SetValueChangedCallback(function()
+        if ns.AltsPanel and ns.AltsPanel.RefreshIfShown then
+            ns.AltsPanel.RefreshIfShown()
+        end
+    end)
+    Settings.CreateCheckbox(category, altsShowHiddenSetting,
+        "Show characters you've right-clicked-to-hide in the Alts panel, rendered extra-dim. "
+        .. "Right-click a hidden row to un-hide it.")
 
     Settings.RegisterAddOnCategory(category)
     ns.settingsCategoryID = category:GetID()

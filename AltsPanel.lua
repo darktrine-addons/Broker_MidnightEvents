@@ -135,12 +135,31 @@ local function ApplyGeometry()
                    g.x or 0, g.y or 0)
 end
 
+-- Right-click handler: toggle this row's character in the hidden set.
+-- The character disappears from the panel on next render. To un-hide,
+-- flip Settings → "Show hidden characters" — hidden chars then appear
+-- dimmed, and right-click flips them back to visible.
+local function OnRowMouseUp(self, button)
+    if button ~= "RightButton" then return end
+    if not (self.charKey and ns.db) then return end
+    ns.db.hiddenChars = ns.db.hiddenChars or {}
+    if ns.db.hiddenChars[self.charKey] then
+        ns.db.hiddenChars[self.charKey] = nil
+    else
+        ns.db.hiddenChars[self.charKey] = true
+    end
+    if ns.AltsPanel.RefreshIfShown then ns.AltsPanel.RefreshIfShown() end
+end
+
 -- Row factory. Each row gets a name FontString on the left + a cell per column
 -- on the right; cells are created on demand via a pool to handle column-count
 -- changes (e.g. if the user toggles showWorldBosses off mid-session).
+-- Rows accept mouse so right-click can toggle hidden state per character.
 local function CreateRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(ROW_HEIGHT)
+    row:EnableMouse(true)
+    row:SetScript("OnMouseUp", OnRowMouseUp)
 
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints()
@@ -180,12 +199,19 @@ end
 
 -- ── Rendering ─────────────────────────────────────────────────────────────────
 
-local function PopulateRow(row, charKey, char, columns, currentWeeklyReset)
+local function PopulateRow(row, charKey, char, columns, currentWeeklyReset, isHidden)
+    row.charKey = charKey  -- consumed by OnRowMouseUp for the toggle
     local isStale = (char.lastLogin or 0) < (currentWeeklyReset or 0)
     local nameText = ClampName(StripRealm(charKey))
     local r, g, b  = ClassColor(char.class)
     if isStale then
         r, g, b = r * 0.55, g * 0.55, b * 0.55
+    end
+    if isHidden then
+        -- Visible only when Settings → "Show hidden characters" is on.
+        -- Extra-dim to make the "hidden but currently displayed" state
+        -- visually distinct from normal active rows.
+        r, g, b = r * 0.45, g * 0.45, b * 0.45
     end
     row.name:SetText(nameText)
     row.name:SetTextColor(r, g, b)
@@ -264,14 +290,12 @@ end
 local function CollectChars()
     local out = {}
     if not (ns.db and ns.db.chars) then return out end
-    -- TODO: hiddenChars is scaffolding for a future "right-click row → hide
-    -- character" feature; no code currently writes to it, so this branch
-    -- always reads an empty table. Left in place so the eventual hide
-    -- feature only needs to add the write path.
-    local hidden = ns.db.hiddenChars or {}
+    local hidden    = ns.db.hiddenChars or {}
+    local showHidden = ns.db.altsPanel and ns.db.altsPanel.showHidden
     for charKey, char in pairs(ns.db.chars) do
-        if not hidden[charKey] then
-            out[#out + 1] = { key = charKey, data = char }
+        local isHidden = hidden[charKey] and true or false
+        if not isHidden or showHidden then
+            out[#out + 1] = { key = charKey, data = char, hidden = isHidden }
         end
     end
     table.sort(out, function(a, b)
@@ -302,14 +326,22 @@ local function Render()
         row:SetWidth(panel.content:GetWidth())
         row:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, -(i - 1) * ROW_HEIGHT)
         row.bg:SetShown(i % 2 == 0)
-        PopulateRow(row, entry.key, entry.data, cols, currentWeeklyReset)
+        PopulateRow(row, entry.key, entry.data, cols, currentWeeklyReset, entry.hidden)
         row:Show()
     end
     for i = #chars + 1, #rowPool do
         rowPool[i]:Hide()
     end
 
-    panel.summary:SetText(string.format("%d tracked", #chars))
+    local hiddenCount = 0
+    if ns.db and ns.db.hiddenChars then
+        for _ in pairs(ns.db.hiddenChars) do hiddenCount = hiddenCount + 1 end
+    end
+    local summary = string.format("%d tracked", #chars)
+    if hiddenCount > 0 then
+        summary = summary .. string.format(" · |cff808080%d hidden|r", hiddenCount)
+    end
+    panel.summary:SetText(summary)
 end
 
 -- ── Frame creation ────────────────────────────────────────────────────────────
