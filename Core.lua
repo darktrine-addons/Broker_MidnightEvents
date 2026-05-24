@@ -1906,3 +1906,110 @@ SlashCmdList.BMEWIDGET = function(msg)
         end
     end
 end
+
+-- ── Throwaway POI probe ───────────────────────────────────────────────────────
+-- /meprobe [name-fragment]      default fragment = "voidburrow"
+-- Sweeps continent + MIDNIGHT_ZONE_IDS with GetEventsForMap, GetDelvesForMap,
+-- and GetAreaPOIForMap. For every POI whose name matches (case-insensitive)
+-- captures scan/mapID/poiID/name/isTimed/secondsLeft/atlas/widgetSets, plus
+-- BME's own merged-view active entries with matching name (post-dedup view).
+-- Result: Broker_MidnightEventsDB._probe. Throwaway — remove once Abundance
+-- timer plumbing is settled. Pattern: copy + retarget for next quirk.
+SLASH_BMEPROBE1 = "/meprobe"
+SlashCmdList.BMEPROBE = function(msg)
+    if not ns.db then
+        print("|cffffcc00MidnightEvents|r — SV not yet initialized"); return
+    end
+    local frag = (msg and msg:match("%S+")) or "voidburrow"
+    frag = frag:lower()
+
+    local P = {
+        _schemaVersion = 1, _capturedAt = time(),
+        fragment       = frag,
+        playerMap      = C_Map and C_Map.GetBestMapForUnit
+                          and C_Map.GetBestMapForUnit("player"),
+        continentMapID = ns.Events and ns.Events.GetContinentMapID(),
+        hits           = {},
+        active         = {},
+    }
+
+    local function matches(name)
+        return name and name:lower():find(frag, 1, true) ~= nil
+    end
+
+    local function probe(mapID, label, getter, scanName)
+        if not (C_AreaPoiInfo and C_AreaPoiInfo[getter]) then return end
+        local ids = C_AreaPoiInfo[getter](mapID) or {}
+        for _, poiID in ipairs(ids) do
+            local info = C_AreaPoiInfo.GetAreaPOIInfo
+                         and C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+            local name = info and info.name
+            if matches(name) then
+                local rec = {
+                    scan        = scanName,
+                    mapID       = mapID,
+                    mapLabel    = label,
+                    poiID       = poiID,
+                    name        = name,
+                    atlasName   = info and info.atlasName,
+                    description = info and info.description,
+                    tooltipWidgetSet = info and info.tooltipWidgetSet,
+                    iconWidgetSet    = info and info.iconWidgetSet,
+                    isTimed_byMap = C_AreaPoiInfo.IsAreaPOITimed
+                                    and C_AreaPoiInfo.IsAreaPOITimed(poiID) or false,
+                }
+                if rec.isTimed_byMap and C_AreaPoiInfo.GetAreaPOISecondsLeft then
+                    rec.secondsLeft = C_AreaPoiInfo.GetAreaPOISecondsLeft(poiID)
+                end
+                P.hits[#P.hits + 1] = rec
+            end
+        end
+    end
+
+    local maps = { { P.continentMapID or 2537, "continent" } }
+    for _, mid in ipairs(MIDNIGHT_ZONE_IDS) do
+        maps[#maps + 1] = { mid, "zone" }
+    end
+    for _, m in ipairs(maps) do
+        probe(m[1], m[2], "GetEventsForMap",  "events")
+        probe(m[1], m[2], "GetDelvesForMap",  "delves")
+        probe(m[1], m[2], "GetAreaPOIForMap", "all")
+    end
+
+    if ns.Events and ns.Events.GetActive then
+        for _, e in ipairs(ns.Events.GetActive() or {}) do
+            if matches(e.name) then
+                P.active[#P.active + 1] = {
+                    name        = e.name,
+                    source      = e.source,
+                    areaPoiID   = e.areaPoiID,
+                    isTimed     = e.isTimed,
+                    secondsLeft = e.secondsLeft,
+                    mapID       = e.mapID,
+                    kind        = e.kind,
+                    secs        = e.secs,
+                }
+            end
+        end
+    end
+
+    ns.db._probe = P
+    print(string.format(
+        "|cffffcc00MidnightEvents|r probe '%s' — hits=%d active=%d",
+        frag, #P.hits, #P.active))
+    for _, h in ipairs(P.hits) do
+        print(string.format(
+            "  [%s/%s] map=%d poi=%d  timed=%s  secs=%s  '%s'",
+            h.scan, h.mapLabel, h.mapID, h.poiID,
+            tostring(h.isTimed_byMap), tostring(h.secondsLeft),
+            tostring(h.name)))
+    end
+    for _, a in ipairs(P.active) do
+        print(string.format(
+            "  active: src=%s poi=%s timed=%s secs=%s kind=%s '%s'",
+            tostring(a.source), tostring(a.areaPoiID),
+            tostring(a.isTimed), tostring(a.secondsLeft),
+            tostring(a.kind), tostring(a.name)))
+    end
+    print("|cffffcc00  Key:|r Broker_MidnightEventsDB._probe  (run /reload to flush)")
+end
