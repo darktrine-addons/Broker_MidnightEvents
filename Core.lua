@@ -1362,7 +1362,43 @@ f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("QUEST_REMOVED")
 
-f:SetScript("OnEvent", function(self, event)
+-- Session-local map of recent turn-in timestamps per questID. Used by the
+-- QUEST_REMOVED handler to distinguish "removed via turn-in" (preserve
+-- cached pick) from "removed via abandon" (clear cached pick). Why we
+-- need this: IsQuestFlaggedCompleted is unreliable as the discriminator
+-- because Liadrin pool members flag permanently on first completion
+-- (see [[wow-isquestflaggedcompleted-lifetime]]) — a player who abandons
+-- a re-accepted pool member they've completed in any prior week would
+-- look identical to a fresh turn-in via the flag alone.
+local recentTurnIn = {}
+local TURNIN_WINDOW = 5  -- seconds — QUEST_REMOVED fires right after QUEST_TURNED_IN
+
+-- Clear any cached `picks` entries pointing at this quest, used when we
+-- detect an abandon. The cached pool member is no longer the player's
+-- current pick — wiping it lets DetectWeeklyPicks's pass-1 active-log
+-- scan re-establish a fresh pick if/when the player accepts another.
+local function ClearPicksMatching(questID)
+    if not (ns.char and ns.char.picks) then return end
+    for key, qid in pairs(ns.char.picks) do
+        if qid == questID then ns.char.picks[key] = nil end
+    end
+end
+
+f:SetScript("OnEvent", function(self, event, arg1)
+    if event == "QUEST_TURNED_IN" and arg1 then
+        recentTurnIn[arg1] = GetTime()
+    elseif event == "QUEST_REMOVED" and arg1 then
+        local ts = recentTurnIn[arg1]
+        if ts and (GetTime() - ts) <= TURNIN_WINDOW then
+            -- Paired with a recent QUEST_TURNED_IN: the quest left the
+            -- log via successful turn-in. Cache preserved by RefreshWeeklies
+            -- below (the cached value remains flagged-complete).
+            recentTurnIn[arg1] = nil
+        else
+            -- Bare QUEST_REMOVED = abandon. Drop the cached pick.
+            ClearPicksMatching(arg1)
+        end
+    end
     if event == "PLAYER_ENTERING_WORLD"
        or event == "QUEST_TURNED_IN"
        or event == "QUEST_REMOVED" then
