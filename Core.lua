@@ -370,6 +370,37 @@ local function IsWeeklySlotDone(w)
     return false
 end
 
+-- Detect rows whose tracking quest is in the active log with all
+-- objectives complete (i.e. ready for the player to walk to the NPC and
+-- hand in). Distinct from IsWeeklySlotDone, which checks the post-
+-- turn-in flagged-complete state.
+--
+-- For single-questID rows, query directly. For `picks` rows (Liadrin /
+-- Bonus Event / Void Assault zone), use the cached active pick so we
+-- check only the relevant pool member rather than walking all of them
+-- — keeps the check exact and skips any pool member that's been
+-- abandoned. For non-picks multi-questID rows, fall back to "any pool
+-- member is ready" since they're mutually exclusive by design.
+local function IsWeeklyReadyForTurnIn(w)
+    if not C_QuestLog or not C_QuestLog.ReadyForTurnIn then return false end
+    if w.questID then
+        return C_QuestLog.ReadyForTurnIn(w.questID) or false
+    end
+    if w.picks and ns.char and ns.char.picks then
+        local picked = ns.char.picks[w.key]
+        if picked then
+            return C_QuestLog.ReadyForTurnIn(picked) or false
+        end
+        return false
+    end
+    if w.questIDs then
+        for _, qid in ipairs(w.questIDs) do
+            if C_QuestLog.ReadyForTurnIn(qid) then return true end
+        end
+    end
+    return false
+end
+
 -- Detect which pool member the current char has accepted (or completed)
 -- this week for every ns.weeklies entry with a `picks` map. Stored on
 -- ns.char.picks[<key>] = questID; the tooltip then looks up
@@ -1057,8 +1088,9 @@ local function BuildTooltip()
                                .. DIM_OPEN .. "(" .. w.hint .. ")" .. CLOSE
                 end
                 rows[#rows + 1] = {
-                    label = rowLabel,
-                    done  = weeklyState[w.key] or false,
+                    label          = rowLabel,
+                    done           = weeklyState[w.key] or false,
+                    readyForTurnIn = IsWeeklyReadyForTurnIn(w),
                 }
             end
         end
@@ -1097,6 +1129,14 @@ local function BuildTooltip()
                     valueText = CHECK
                 end
                 vR, vG, vB = 0.6, 0.6, 0.6
+            elseif r.readyForTurnIn then
+                -- Objectives are met but the player hasn't formally handed
+                -- the quest in yet. Render in amber to draw attention —
+                -- the row LOOKS in-progress at first glance but a single
+                -- NPC interaction would flip it to done.
+                labelR, labelG, labelB = CV_r, CV_g, CV_b
+                valueText = "turn in!"
+                vR, vG, vB = CH_r, CH_g, CH_b
             elseif r.isWorldBoss then
                 -- World boss outstanding: special green 'available' instead of ✗.
                 labelR, labelG, labelB = CV_r, CV_g, CV_b
