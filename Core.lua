@@ -1040,7 +1040,7 @@ local function BuildTooltip()
         end
         if hasWeeklies then
             for _, w in ipairs(ns.weeklies) do
-                if w.hideInTooltip then goto continue end
+              if not w.hideInTooltip then
                 local rowLabel = w.label
                 -- Annotation color hierarchy:
                 --   * Row name (white, set by AddDoubleLine) — the
@@ -1120,7 +1120,7 @@ local function BuildTooltip()
                     done           = weeklyState[w.key] or false,
                     readyForTurnIn = IsWeeklyReadyForTurnIn(w),
                 }
-                ::continue::
+              end  -- if not w.hideInTooltip
             end
         end
 
@@ -1338,6 +1338,7 @@ end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("QUEST_ACCEPTED")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("QUEST_REMOVED")
 
@@ -1379,6 +1380,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
         end
     end
     if event == "PLAYER_ENTERING_WORLD"
+       or event == "QUEST_ACCEPTED"
        or event == "QUEST_TURNED_IN"
        or event == "QUEST_REMOVED" then
         RefreshWeeklies()
