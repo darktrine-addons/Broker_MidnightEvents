@@ -256,6 +256,37 @@ ns.voidforgeUnlockQuest = 95268
 -- surfaces immediately during the week.
 ns.preyHuntsWidgetSet = 1843
 
+-- Prey hunt quest pool — questID → tier. Used by Core to count flagged-
+-- completed prey hunts per tier each week ("Normal 3/4 · Hard 2/4 ·
+-- Nightmare 0/4"). Cap per tier per week is 4.
+--
+-- Normal block is fully enumerable: contiguous 91095–91124, one per
+-- target in storyline order (30 named targets). Verified 2026-05-26
+-- via Wowhead crawl.
+--
+-- Hard / Nightmare IDs are scattered across ~91210–91267 with gaps
+-- and irregular pairing. The confirmed entries below are the ones we
+-- could pin from in-game harvest plus targeted Wowhead lookups.
+-- Coverage grows automatically at addon load by parsing every
+-- "Prey: <Name> (Tier)" entry in the harvest quest catalogue
+-- (Broker_MidnightEventsQuestCatalogue), so the table self-heals as
+-- the warband encounters more variants over time.
+ns.preyQuests = {}
+for id = 91095, 91124 do ns.preyQuests[id] = "normal" end
+-- Confirmed Hard / Nightmare (partial coverage; catalogue scan fills in
+-- the rest at runtime).
+ns.preyQuests[91210] = "hard"       -- Magister Sunbreaker
+ns.preyQuests[91211] = "nightmare"  -- Magister Sunbreaker
+ns.preyQuests[91212] = "hard"       -- Magistrix Emberlash
+ns.preyQuests[91213] = "nightmare"  -- Magistrix Emberlash
+ns.preyQuests[91220] = "hard"       -- Deliah Gloomsong
+ns.preyQuests[91221] = "nightmare"  -- Deliah Gloomsong
+ns.preyQuests[91263] = "hard"       -- Lost Theldrin (approximate; pair unverified)
+ns.preyQuests[91264] = "nightmare"  -- Lost Theldrin
+ns.preyQuests[91265] = "hard"       -- Thornspeaker Edgath
+ns.preyQuests[91266] = "nightmare"  -- Thornspeaker Edgath
+ns.preyQuests[91267] = "nightmare"  -- Thorn-Witch Liset
+
 ns.charProgress = {
     {
         key         = "voidcores",

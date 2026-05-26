@@ -475,6 +475,31 @@ end
 -- the quest is in their log will display the row as done (the slot's
 -- own IsWeeklySlotDone signal) but without the "(<choice> picked)"
 -- annotation. Acceptable — the completion state is what matters.
+-- Augment ns.preyQuests from the harvest catalogue. Hard/Nightmare quest
+-- IDs aren't fully enumerable from the public web — Wowhead has gaps and
+-- irregular pairing — so the canonical Hard/NM set fills in as the
+-- warband encounters new variants. Parses every "Prey: <Name> (Tier)"
+-- title in Broker_MidnightEventsQuestCatalogue and records the tier.
+-- Idempotent: hardcoded entries from Data.lua aren't overwritten, and
+-- repeated calls are a no-op.
+local function AugmentPreyQuestsFromCatalogue()
+    if not (ns.preyQuests and Broker_MidnightEventsQuestCatalogue) then return end
+    for key, info in pairs(Broker_MidnightEventsQuestCatalogue) do
+        local title = info and info.title
+        if type(title) == "string" then
+            local tier = title:match("^Prey: .+ %((Normal)%)$")
+                      or title:match("^Prey: .+ %((Hard)%)$")
+                      or title:match("^Prey: .+ %((Nightmare)%)$")
+            if tier then
+                local qid = tonumber(key)
+                if qid and not ns.preyQuests[qid] then
+                    ns.preyQuests[qid] = tier:lower()
+                end
+            end
+        end
+    end
+end
+
 local function DetectWeeklyPicks()
     if not (ns.char and C_QuestLog) then return end
     ns.char.picks = ns.char.picks or {}
@@ -917,15 +942,42 @@ local function BuildTooltip()
                     vr, vg, vb = 0.65, 0.75, 0.95
                 end
             elseif kind == "ongoing" then
-                -- Prey row override: when we've observed the Hunts Available
-                -- board recently, replace generic "active" with the visible
-                -- tier's remaining count (e.g. "Nightmare 12/12"). The
-                -- character's unlocked tier is the bar with shownState==1
-                -- in widget set 1843; other bars are hidden placeholders.
+                -- Prey row override: per-tier breakdown from quest-log
+                -- flags. The Eversong board's "Hunts Available" bars are
+                -- four mirrors of one weekly-total counter (verified
+                -- 2026-05-26 by completing a Nightmare hunt and watching
+                -- all four bars drop by 1), so they don't carry per-tier
+                -- granularity. Per-tier counts come from ns.preyQuests:
+                -- iterate the known prey questIDs, group flagged
+                -- completions by tier, render as
+                -- "Normal X/4 · Hard Y/4 · Nightmare Z/4" up to the
+                -- player's unlocked tier (derived from the shownState=1
+                -- bar's max — 4/8/12 = Normal/Hard/Nightmare unlock).
                 local pH = ns.char and ns.char.preyHunts
-                if ev.name and ev.name:find("Prey") and pH and pH.max then
-                    valueText = string.format("%s %d/%d",
-                                              pH.tier or "?", pH.value, pH.max)
+                if ev.name and ev.name:find("Prey")
+                   and ns.preyQuests and C_QuestLog
+                   and C_QuestLog.IsQuestFlaggedCompleted then
+                    local counts = { normal = 0, hard = 0, nightmare = 0 }
+                    for qid, tier in pairs(ns.preyQuests) do
+                        if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                            counts[tier] = (counts[tier] or 0) + 1
+                        end
+                    end
+                    -- Cap each tier at the per-tier weekly limit of 4.
+                    for t in pairs(counts) do
+                        if counts[t] > 4 then counts[t] = 4 end
+                    end
+                    -- Render only tiers up to the unlocked one. Without
+                    -- observed widget data, default to showing all three.
+                    local unlockMax = (pH and pH.max) or 12
+                    local parts = { string.format("Normal %d/4", counts.normal) }
+                    if unlockMax >= 8 then
+                        parts[#parts + 1] = string.format("Hard %d/4", counts.hard)
+                    end
+                    if unlockMax >= 12 then
+                        parts[#parts + 1] = string.format("Nightmare %d/4", counts.nightmare)
+                    end
+                    valueText = table.concat(parts, " · ")
                     vr, vg, vb = CV_r, CV_g, CV_b
                 else
                     valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
@@ -1437,6 +1489,9 @@ f:SetScript("OnEvent", function(self, event, arg1)
             -- Bare QUEST_REMOVED = abandon. Drop the cached pick.
             ClearPicksMatching(arg1)
         end
+    end
+    if event == "PLAYER_ENTERING_WORLD" then
+        AugmentPreyQuestsFromCatalogue()
     end
     if event == "PLAYER_ENTERING_WORLD"
        or event == "QUEST_ACCEPTED"
