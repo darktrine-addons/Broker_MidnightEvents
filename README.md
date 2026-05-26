@@ -129,6 +129,23 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 - **Featured Dungeon** weekly row, tracking Halduron Brightwing's "do one Midnight dungeon" quest from the Silvermoon tent. Renders as `Featured Dungeon (<dungeon name>)` once you've picked up this week's variant — eight dungeons rotate, one per week, any difficulty counts (Follower included).
 - **Bonus Event Weekly** now recognises **Emissary of War** (Mythic Dungeons variant) alongside the Delves and Battle variants already tracked. The row reads `Bonus Event Weekly (Dungeons picked, X/4)` on dungeon weeks.
 
+### v0.9.3-beta — more weeklies + smarter Prey + level-aware tooltip
+
+**New features:**
+- **Prey Hunts** now lives in This Week with a full per-tier breakdown: `Normal X/4 · Hard Y/4 · Nightmare Z/4`. Done ✓ once you've hit the unlock-tier cap (4 / 8 / 12 hunts). Tiers above your unlock are hidden so the row stays tight on levelling alts. Replaces the bare `active` placeholder under Now.
+- **Featured Dungeon** weekly tracking Halduron Brightwing's "do one Midnight dungeon" — renders as `Featured Dungeon (<dungeon name>)` once you've picked up this week's variant. Eight dungeons rotate one per week; any difficulty counts, Follower included.
+- **Hope in the Darkest Corners** (sub-90 row from Halduron) — surfaces while levelling, vanishes the moment you hit 90 and Halduron switches to Featured Dungeon.
+- **Gnawing Curiosity** weekly — Naleidea Rivergleam's auto-credited weekly fired by your warband's first T4+ delve completion. Voidlight Marl reward.
+- **Bonus Event Weekly** now recognises **Emissary of War** (Mythic Dungeons variant) alongside the existing Delves and Battle variants.
+
+**Improvements:**
+- **Sub-90 alts get a focused tooltip.** World Boss, A Nightmarish Task, Lady Liadrin's Weekly, Bonus Event Weekly, and Featured Dungeon are hidden on characters below max level instead of showing as permanent ✗.
+- **Picks annotation appears immediately on quest accept.** Previously you had to `/reload` after picking up a Liadrin choice or Featured Dungeon for the row to display which one you took.
+- **Tooltip dropped the Alts roll-up section.** Shift-RightClick still opens the dedicated Alts panel, which carries the same information with better fidelity.
+
+**Fixes:**
+- Tooltip Lua error from a pattern WoW's parser doesn't accept. Tooltip rendering should never surface a script error again from this path.
+
 ### v0.9.2-beta — new weeklies + polish
 
 **New features:**
