@@ -231,10 +231,16 @@ local function PopulateRow(row, charKey, char, columns, currentWeeklyReset, isHi
     row.name:SetTextColor(r, g, b)
 
     local weeklies = char.weeklies or {}
+    -- charLevel defaults to 0 when we haven't yet observed this character
+    -- post-feature deploy. That biases levelMin gates toward "dash" (0 <
+    -- 90 = true) — the honest signal for "we can't confirm this row is
+    -- available here." levelMax checks (0 > 89 = false) remain safe so an
+    -- unknown-level char doesn't get the sub-90-only row dashed by
+    -- mistake. Cleared the moment the char logs in once with the addon.
     local charLevel = char.level or 0
     for i, col in ipairs(columns) do
         local cell = GetCell(row, i)
-        local levelGated = (col.levelMin and charLevel > 0 and charLevel < col.levelMin)
+        local levelGated = (col.levelMin and charLevel < col.levelMin)
                         or (col.levelMax and charLevel > col.levelMax)
         if isStale then
             cell:SetText(DASH)
