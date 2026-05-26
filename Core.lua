@@ -252,6 +252,37 @@ local function ProbeCharProgressWidget(setID)
     return nil
 end
 
+-- Probe Prey Hunts board (Eversong chamber). The set has several
+-- StatusBars labelled "Hunts Available"; filter by that text to skip
+-- the decorative 0/100 bars, then sort by widgetID for stable display
+-- order. Returns a list of {value, max, widgetID} or nil.
+local function ProbePreyHunts()
+    local setID = ns.preyHuntsWidgetSet
+    if not (setID and C_UIWidgetManager
+            and C_UIWidgetManager.GetAllWidgetsBySetID
+            and C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo) then
+        return nil
+    end
+    local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
+    local bars = {}
+    for _, w in ipairs(widgets) do
+        if w.widgetType == 2 then
+            local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
+            if info and info.text == "Hunts Available"
+               and info.barMax and info.barMax > 0 then
+                bars[#bars + 1] = {
+                    value    = info.barValue,
+                    max      = info.barMax,
+                    widgetID = w.widgetID,
+                }
+            end
+        end
+    end
+    if #bars == 0 then return nil end
+    table.sort(bars, function(a, b) return a.widgetID < b.widgetID end)
+    return bars
+end
+
 -- Periodically rebuild the progressCache from active events AND refresh
 -- per-character Voidforge progress. Runs in its own ticker context —
 -- the barValue arithmetic taints this call's context only, and writes
@@ -279,6 +310,15 @@ local function RefreshProgressCache()
                     value = v, max = m, seenAt = time(),
                 }
             end
+        end
+    end
+
+    -- Prey Hunts board: same warm-cache pattern as Voidforge — only
+    -- updates when the player is near the in-room display.
+    if ns.char then
+        local bars = ProbePreyHunts()
+        if bars then
+            ns.char.preyHunts = { bars = bars, seenAt = time() }
         end
     end
 
@@ -870,7 +910,22 @@ local function BuildTooltip()
                     vr, vg, vb = 0.65, 0.75, 0.95
                 end
             elseif kind == "ongoing" then
-                valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
+                -- Prey row override: when we've observed the Hunts Available
+                -- board recently, replace the generic "active" with raw bar
+                -- counts (sorted by widgetID ascending — likely N/H/NM tier
+                -- order, refined empirically as the week progresses).
+                if ev.name and ev.name:find("Prey")
+                   and ns.char and ns.char.preyHunts
+                   and ns.char.preyHunts.bars then
+                    local parts = {}
+                    for _, bar in ipairs(ns.char.preyHunts.bars) do
+                        parts[#parts + 1] = string.format("%d/%d", bar.value, bar.max)
+                    end
+                    valueText = table.concat(parts, " · ")
+                    vr, vg, vb = CV_r, CV_g, CV_b
+                else
+                    valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
+                end
             elseif kind == "wave" then
                 -- Continuous POI with an internal wave cycle. Show the
                 -- countdown to the next wave, rendered like an upcoming row.

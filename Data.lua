@@ -246,6 +246,16 @@ ns.knownEventNames = {
 -- unlock signal.
 ns.voidforgeUnlockQuest = 95268
 
+-- Prey Hunts board widget set. Same pattern as Voidforge — bars only
+-- update when the player is near the in-room display (Eversong Prey
+-- chamber); cache stays warm in ns.char.preyHunts until the next
+-- observation. Tier semantics (Normal / Hard / Nightmare) inferred
+-- from the user's report of three difficulty bands and Blizzard's
+-- ordering — sorted by widgetID ascending. Render uses raw counts
+-- so any mismatch between this guess and the actual semantics
+-- surfaces immediately during the week.
+ns.preyHuntsWidgetSet = 1843
+
 ns.charProgress = {
     {
         key         = "voidcores",
