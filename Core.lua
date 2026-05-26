@@ -969,15 +969,24 @@ local function BuildTooltip()
                     end
                     -- Render only tiers up to the unlocked one. Without
                     -- observed widget data, default to showing all three.
+                    -- Counts in warm gold (PROG_OPEN), labels + separators
+                    -- in grey (DIM_OPEN) — matches the colour hierarchy
+                    -- used by every other N/M weekly annotation.
+                    local DIM_OPEN, PROG_OPEN, CLOSE =
+                        "|cff909090", "|cffd9c97f", "|r"
+                    local function part(label, n)
+                        return DIM_OPEN .. label .. " " .. CLOSE
+                            .. PROG_OPEN .. n .. "/4" .. CLOSE
+                    end
                     local unlockMax = (pH and pH.max) or 12
-                    local parts = { string.format("Normal %d/4", counts.normal) }
+                    local parts = { part("Normal", counts.normal) }
                     if unlockMax >= 8 then
-                        parts[#parts + 1] = string.format("Hard %d/4", counts.hard)
+                        parts[#parts + 1] = part("Hard", counts.hard)
                     end
                     if unlockMax >= 12 then
-                        parts[#parts + 1] = string.format("Nightmare %d/4", counts.nightmare)
+                        parts[#parts + 1] = part("Nightmare", counts.nightmare)
                     end
-                    valueText = table.concat(parts, " · ")
+                    valueText = table.concat(parts, DIM_OPEN .. " · " .. CLOSE)
                     vr, vg, vb = CV_r, CV_g, CV_b
                 else
                     valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
