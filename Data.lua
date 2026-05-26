@@ -147,6 +147,16 @@ ns.weeklies = {
     { key = "haranir",       questID = 89268, label = "Lost Legends",        short = "LL",
       hint = "Legends of the Haranir" },
 
+    -- A Gnawing Void of Curiosity — Naleidea Rivergleam's auto-credited
+    -- weekly that fires on the first delve completion of the week. Reward
+    -- is Voidlight Marl currency, so a T4+ tier gate is likely (Marl
+    -- doesn't drop from low tiers). Frequency=2 in Blizzard's quest data
+    -- confirms weekly cadence even though Wowhead misclassifies it as
+    -- one-time. Re-verify reset behaviour on first weekly cycle; rip if
+    -- 93784 doesn't actually clear.
+    { key = "gnawingVoid",   questID = 93784, label = "Gnawing Curiosity", short = "GnawC",
+      hint = "first delve T4+" },
+
     -- Delver's Bounty weekly. The Beacon of Hope → Nullaeus → Delver's
     -- Bounty → Hidden Trove chain. Single trackable flag 91190 is an
     -- internal Blizzard system quest (Wowhead: "doesn't exist") that
