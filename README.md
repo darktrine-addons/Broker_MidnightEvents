@@ -123,6 +123,15 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.2-beta — new weeklies + polish
+
+**New features:**
+- **Delver's Bounty** weekly row in This Week. Tracks the Beacon of Hope → Nullaeus → Delver's Bounty → Hidden Trove chain. Done state flips on Hidden Trove turn-in.
+- **Arcantina** weekly row, with `(N/9 patrons)` lifetime annotation. Weekly side tracks the visit (quest 93767, resets every week); the patron count is your running progress across the nine-quest collection that awards the "Old Soldiers" achievement.
+
+**Improvements:**
+- **Alts panel** title bar now carries the `(N tracked, M hidden)` summary directly. The header row gets its rightmost column back, no longer overlapping the floating count.
+
 ### v0.9.1-beta — bugfix refresh
 
 **Fixes:**
