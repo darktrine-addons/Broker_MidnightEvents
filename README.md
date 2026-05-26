@@ -123,6 +123,12 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.3-beta — more weeklies
+
+**New features:**
+- **Featured Dungeon** weekly row, tracking Halduron Brightwing's "do one Midnight dungeon" quest from the Silvermoon tent. Renders as `Featured Dungeon (<dungeon name>)` once you've picked up this week's variant — eight dungeons rotate, one per week, any difficulty counts (Follower included).
+- **Bonus Event Weekly** now recognises **Emissary of War** (Mythic Dungeons variant) alongside the Delves and Battle variants already tracked. The row reads `Bonus Event Weekly (Dungeons picked, X/4)` on dungeon weeks.
+
 ### v0.9.2-beta — new weeklies + polish
 
 **New features:**

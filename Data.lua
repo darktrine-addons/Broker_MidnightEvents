@@ -84,11 +84,46 @@ ns.weeklies = {
       questIDs = {
           93595,  -- A Call to Delves (5 Midnight Delves)
           93593,  -- A Call to Battle (4 BG wins)
+          93598,  -- Emissary of War (4 Mythic Dungeons) — Aethas, freq=2
       },
       picks = {
           [93595] = "Delves",
           [93593] = "Battle",
+          [93598] = "Dungeons",
       },
+    },
+
+    -- Featured Dungeon weekly. Halduron Brightwing (NPC 256210, Silvermoon
+    -- tent) offers one quest per week from a pool of eight, each named
+    -- after a Midnight dungeon and asking the player to clear that dungeon
+    -- at any difficulty (Follower included). Reward: gold + a player-
+    -- choice 1,000 reputation token (Hara'ti / Singularity / Silvermoon
+    -- Court / Amani). Independent of the M+ Awakened/affix rotation.
+    -- Quest IDs verified via Wowhead 2026-05-26; pool is contiguous
+    -- 93751–93758. `picksFormat = "zoneOnly"` renders the row as
+    -- "Featured Dungeon (Voidscar Arena)" — same shape as Void Assault.
+    { key = "featuredDungeon", label = "Featured Dungeon", short = "FeatD",
+      questIDs = {
+          93751,  -- Windrunner Spire
+          93752,  -- Murder Row
+          93753,  -- Magisters' Terrace
+          93754,  -- Maisara Caverns
+          93755,  -- Den of Nalorakk
+          93756,  -- The Blinding Vale
+          93757,  -- Voidscar Arena
+          93758,  -- Nexus-Point Xenas
+      },
+      picks = {
+          [93751] = "Windrunner Spire",
+          [93752] = "Murder Row",
+          [93753] = "Magisters' Terrace",
+          [93754] = "Maisara Caverns",
+          [93755] = "Den of Nalorakk",
+          [93756] = "The Blinding Vale",
+          [93757] = "Voidscar Arena",
+          [93758] = "Nexus-Point Xenas",
+      },
+      picksFormat = "zoneOnly",
     },
 
     -- Void Assault zone-rotation weekly. The active zone changes weekly
