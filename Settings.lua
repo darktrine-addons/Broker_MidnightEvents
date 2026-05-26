@@ -172,13 +172,12 @@ sf:SetScript("OnEvent", function(self, event, name)
                 end
             end
         end
-        -- Prey Hunts board: bars reset to full each weekly cycle. Setting
-        -- each bar's value to its max gives the post-reset display
-        -- immediately, before the player next visits the Eversong board.
-        if char.preyHunts and char.preyHunts.bars then
-            for _, bar in ipairs(char.preyHunts.bars) do
-                bar.value = bar.max
-            end
+        -- Prey Hunts board: visible-tier bar resets to full each weekly
+        -- cycle. Restore value to max so the post-reset display reflects
+        -- a fresh week immediately, before the player next visits the
+        -- Eversong board.
+        if char.preyHunts and char.preyHunts.max then
+            char.preyHunts.value = char.preyHunts.max
         end
     end
 

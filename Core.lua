@@ -252,10 +252,14 @@ local function ProbeCharProgressWidget(setID)
     return nil
 end
 
--- Probe Prey Hunts board (Eversong chamber). The set has several
--- StatusBars labelled "Hunts Available"; filter by that text to skip
--- the decorative 0/100 bars, then sort by widgetID for stable display
--- order. Returns a list of {value, max, widgetID} or nil.
+-- Probe Prey Hunts board (Eversong chamber). The widget set carries
+-- one StatusBar per tier with different barMax values (4 = Normal,
+-- 8 = Hard, 12 = Nightmare), and Blizzard discriminates the active
+-- one via shownState=1. The other tier bars are present but hidden,
+-- so we only return the visible one — that's the bar tracking the
+-- character's unlocked tier. Returns { value, max, tier } or nil.
+local PREY_TIER_BY_MAX = { [4] = "Normal", [8] = "Hard", [12] = "Nightmare" }
+
 local function ProbePreyHunts()
     local setID = ns.preyHuntsWidgetSet
     if not (setID and C_UIWidgetManager
@@ -264,23 +268,21 @@ local function ProbePreyHunts()
         return nil
     end
     local widgets = C_UIWidgetManager.GetAllWidgetsBySetID(setID) or {}
-    local bars = {}
     for _, w in ipairs(widgets) do
         if w.widgetType == 2 then
             local info = C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo(w.widgetID)
             if info and info.text == "Hunts Available"
+               and info.shownState == 1
                and info.barMax and info.barMax > 0 then
-                bars[#bars + 1] = {
-                    value    = info.barValue,
-                    max      = info.barMax,
-                    widgetID = w.widgetID,
+                return {
+                    value = info.barValue,
+                    max   = info.barMax,
+                    tier  = PREY_TIER_BY_MAX[info.barMax] or "?",
                 }
             end
         end
     end
-    if #bars == 0 then return nil end
-    table.sort(bars, function(a, b) return a.widgetID < b.widgetID end)
-    return bars
+    return nil
 end
 
 -- Periodically rebuild the progressCache from active events AND refresh
@@ -316,9 +318,14 @@ local function RefreshProgressCache()
     -- Prey Hunts board: same warm-cache pattern as Voidforge — only
     -- updates when the player is near the in-room display.
     if ns.char then
-        local bars = ProbePreyHunts()
-        if bars then
-            ns.char.preyHunts = { bars = bars, seenAt = time() }
+        local bar = ProbePreyHunts()
+        if bar then
+            ns.char.preyHunts = {
+                value  = bar.value,
+                max    = bar.max,
+                tier   = bar.tier,
+                seenAt = time(),
+            }
         end
     end
 
@@ -911,17 +918,14 @@ local function BuildTooltip()
                 end
             elseif kind == "ongoing" then
                 -- Prey row override: when we've observed the Hunts Available
-                -- board recently, replace the generic "active" with raw bar
-                -- counts (sorted by widgetID ascending — likely N/H/NM tier
-                -- order, refined empirically as the week progresses).
-                if ev.name and ev.name:find("Prey")
-                   and ns.char and ns.char.preyHunts
-                   and ns.char.preyHunts.bars then
-                    local parts = {}
-                    for _, bar in ipairs(ns.char.preyHunts.bars) do
-                        parts[#parts + 1] = string.format("%d/%d", bar.value, bar.max)
-                    end
-                    valueText = table.concat(parts, " · ")
+                -- board recently, replace generic "active" with the visible
+                -- tier's remaining count (e.g. "Nightmare 12/12"). The
+                -- character's unlocked tier is the bar with shownState==1
+                -- in widget set 1843; other bars are hidden placeholders.
+                local pH = ns.char and ns.char.preyHunts
+                if ev.name and ev.name:find("Prey") and pH and pH.max then
+                    valueText = string.format("%s %d/%d",
+                                              pH.tier or "?", pH.value, pH.max)
                     vr, vg, vb = CV_r, CV_g, CV_b
                 else
                     valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
