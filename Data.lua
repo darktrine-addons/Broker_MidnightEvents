@@ -40,7 +40,7 @@ ns.weeklies = {
     { key = "stormarion",    questID = 94581, label = "Stand Your Ground",   short = "SYG",
       hint = "Stormarion Assault" },
     { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task",  short = "NightT",
-      hint = "Prey Hunts" },
+      hint = "Prey Hunts", levelMin = 90 },
 
     -- Lady Liadrin's choice pool. She offers ~4 of 8 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward
@@ -48,6 +48,7 @@ ns.weeklies = {
     -- generic DetectWeeklyPicks scan + the "(<choice> picked, N/M)"
     -- annotation in This Week.
     { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW",
+      levelMin = 90,
       questIDs = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
@@ -81,6 +82,7 @@ ns.weeklies = {
     -- The World Awaits, The Very Best, Emissary of War, Timewalking).
     -- Expand questIDs/picks as those quest IDs surface via harvest.
     { key = "bonusEvent", label = "Bonus Event Weekly", short = "BonusW",
+      levelMin = 90,
       questIDs = {
           93595,  -- A Call to Delves (5 Midnight Delves)
           93593,  -- A Call to Battle (4 BG wins)
@@ -103,6 +105,7 @@ ns.weeklies = {
     -- 93751–93758. `picksFormat = "zoneOnly"` renders the row as
     -- "Featured Dungeon (Voidscar Arena)" — same shape as Void Assault.
     { key = "featuredDungeon", label = "Featured Dungeon", short = "FeatD",
+      levelMin = 90,
       questIDs = {
           93751,  -- Windrunner Spire
           93752,  -- Murder Row
@@ -125,6 +128,15 @@ ns.weeklies = {
       },
       picksFormat = "zoneOnly",
     },
+
+    -- Hope in the Darkest Corners — Halduron Brightwing's sub-90 weekly
+    -- (offered in place of Featured Dungeon while levelling). Asks for
+    -- 10 Midnight activities (world quests / dungeons / delves), any mix.
+    -- Confirmed 2026-05-26 on Alaelyne (level 80). levelMax=89 hides the
+    -- row once the character hits max and Halduron switches to the
+    -- Featured Dungeon variant.
+    { key = "hopeDarkest", questID = 95468, label = "Hope in the Darkest Corners", short = "Hope",
+      hint = "10 Midnight activities", levelMax = 89 },
 
     -- Void Assault zone-rotation weekly. The active zone changes weekly
     -- (12.0.5 design note); each zone has its own questID. Harandar /

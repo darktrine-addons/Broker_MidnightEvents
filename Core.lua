@@ -1120,8 +1120,11 @@ local function BuildTooltip()
             }
         end
         if hasWeeklies then
+            local playerLevel = UnitLevel and UnitLevel("player") or 0
             for _, w in ipairs(ns.weeklies) do
-              if not w.hideInTooltip then
+              local levelGated = (w.levelMin and playerLevel < w.levelMin)
+                              or (w.levelMax and playerLevel > w.levelMax)
+              if not w.hideInTooltip and not levelGated then
                 local rowLabel = w.label
                 -- Annotation color hierarchy:
                 --   * Row name (white, set by AddDoubleLine) — the
@@ -1211,7 +1214,7 @@ local function BuildTooltip()
                     done           = weeklyState[w.key] or false,
                     readyForTurnIn = IsWeeklyReadyForTurnIn(w),
                 }
-              end  -- if not w.hideInTooltip
+              end  -- if not w.hideInTooltip and not levelGated
             end
         end
 
