@@ -194,7 +194,6 @@ sf:SetScript("OnEvent", function(self, event, name)
         { key = "delves",    label = "Bountiful Delves (today)",  desc = "Show today's bountiful Delve rotation with the active story variant. Auto-hidden on chars outside the Midnight continent." },
         { key = "weekly",    label = "This Week",                 desc = "Show the per-character weekly checklist (World Bosses + tracked weekly quests)." },
         { key = "voidforge", label = "Voidforge progress",        desc = "Show per-character Voidforge counters (Voidcores transmuted, Nilhammer empowered) from Decimus in Voidstorm. Auto-hidden until the first time the character visits Decimus." },
-        { key = "alts",      label = "Alts roll-up",              desc = "Aggregate weekly progress across every character you've logged into with this addon enabled. Hidden when only the active character is tracked." },
     }
     for _, opt in ipairs(sectionOptions) do
         local setting = Settings.RegisterAddOnSetting(

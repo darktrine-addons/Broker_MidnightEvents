@@ -1246,55 +1246,10 @@ local function BuildTooltip()
         end
     end
 
-    -- ── Section: Alts (roll-up summary) ──────────────────────────────────────
-    -- Aggregates per-activity completion across every tracked character that
-    -- has logged in since the most recent weekly reset. Stale-data characters
-    -- (no login since reset) are excluded from both the active count and the
-    -- per-activity denominators, so progress reflects only fresh observations.
-    -- Hidden entirely when the user is the only tracked char.
-    local currentReset = ns.char and ns.char.weeklyReset or 0
-    if SectionEnabled("alts") and ns.db and ns.db.chars and currentReset > 0 then
-        local trackedCount, activeCount = 0, 0
-        local wbDoneCount = 0
-        local weeklyDoneCount = {}            -- weekly key → completion count
-        for _, c in pairs(ns.db.chars) do
-            trackedCount = trackedCount + 1
-            if (c.lastLogin or 0) >= currentReset then
-                activeCount = activeCount + 1
-                if c.worldBoss and c.worldBoss.done then
-                    wbDoneCount = wbDoneCount + 1
-                end
-                if c.weeklies then
-                    for k, done in pairs(c.weeklies) do
-                        if done then
-                            weeklyDoneCount[k] = (weeklyDoneCount[k] or 0) + 1
-                        end
-                    end
-                end
-            end
-        end
-
-        if trackedCount > 1 then
-            Tooltip:AddLine(" ")
-            Tooltip:AddLine(
-                "Alts (" .. trackedCount .. " tracked, "
-                .. activeCount .. " active this reset)",
-                CL_r, CL_g, CL_b)
-
-            if not ns.db or ns.db.showWorldBosses ~= false then
-                Tooltip:AddDoubleLine("World Boss",
-                    wbDoneCount .. "/" .. activeCount .. " done",
-                    CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
-            end
-
-            for _, w in ipairs(ns.weeklies or {}) do
-                local done = weeklyDoneCount[w.key] or 0
-                Tooltip:AddDoubleLine(w.label or w.short,
-                    done .. "/" .. activeCount .. " done",
-                    CV_r, CV_g, CV_b, CV_r, CV_g, CV_b)
-            end
-        end
-    end
+    -- Tooltip Alts roll-up removed — the dedicated Alts panel
+    -- (Shift-RightClick) covers the same surface with better fidelity, so
+    -- the tooltip stays focused on the active character. Char weekly state
+    -- is still aggregated in ns.db.chars for the panel.
 
     -- ── Interaction hints ─────────────────────────────────────────────────────
     -- Keyword in orange, description in white (matches Broker: Coords).
