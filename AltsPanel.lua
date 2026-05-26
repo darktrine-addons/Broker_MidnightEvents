@@ -337,11 +337,12 @@ local function Render()
     if ns.db and ns.db.hiddenChars then
         for _ in pairs(ns.db.hiddenChars) do hiddenCount = hiddenCount + 1 end
     end
-    local summary = string.format("%d tracked", #chars)
+    local title = string.format("Broker_MidnightEvents · Alts  |cff808080(%d tracked", #chars)
     if hiddenCount > 0 then
-        summary = summary .. string.format(" · |cff808080%d hidden|r", hiddenCount)
+        title = title .. string.format(", %d hidden", hiddenCount)
     end
-    panel.summary:SetText(summary)
+    title = title .. ")|r"
+    panel.TitleText:SetText(title)
 end
 
 -- ── Frame creation ────────────────────────────────────────────────────────────
@@ -365,10 +366,6 @@ local function CreatePanel()
     f:SetScript("OnShow",  function() Render()  end)
 
     f.TitleText:SetText("Broker_MidnightEvents · Alts")
-
-    -- Summary line (top-right of inset area).
-    f.summary = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    f.summary:SetPoint("TOPRIGHT", f, "TOPRIGHT", -32, -32)
 
     -- Fixed header row above the scrollable content.
     f.header = CreateFrame("Frame", nil, f)
