@@ -1092,6 +1092,28 @@ local function BuildTooltip()
                     rowLabel = rowLabel .. " "
                                .. DIM_OPEN .. "(" .. w.hint .. ")" .. CLOSE
                 end
+                -- Lifetime-collection progress annotation. Independent of
+                -- the weekly questID check above: `progressIDs` enumerates
+                -- a tour of flags that accumulate across weeks (Arcantina
+                -- patrons; "Old Soldiers"-style structures). Renders the
+                -- N/M count in warm gold inside its own grey paren so the
+                -- weekly row state and the lifetime progress are visually
+                -- distinct from picks/hint annotations.
+                if w.progressIDs and C_QuestLog
+                   and C_QuestLog.IsQuestFlaggedCompleted then
+                    local done, total = 0, #w.progressIDs
+                    for _, qid in ipairs(w.progressIDs) do
+                        if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                            done = done + 1
+                        end
+                    end
+                    rowLabel = rowLabel .. " "
+                               .. DIM_OPEN .. "(" .. CLOSE
+                               .. PROG_OPEN .. done .. "/" .. total .. CLOSE
+                               .. DIM_OPEN .. " "
+                               .. (w.progressLabel or "done")
+                               .. ")" .. CLOSE
+                end
                 rows[#rows + 1] = {
                     label          = rowLabel,
                     done           = weeklyState[w.key] or false,

@@ -111,6 +111,37 @@ ns.weeklies = {
 
     { key = "haranir",       questID = 89268, label = "Lost Legends",        short = "LL",
       hint = "Legends of the Haranir" },
+
+    -- Delver's Bounty weekly. The Beacon of Hope → Nullaeus → Delver's
+    -- Bounty → Hidden Trove chain. Single trackable flag 91190 is an
+    -- internal Blizzard system quest (Wowhead: "doesn't exist") that
+    -- flips on Hidden Trove turn-in and clears on weekly reset.
+    -- Confirmed 2026-05-26 reset cycle. See memory:
+    --   brokermidnightevents-beacon-of-hope-untrackable
+    { key = "delversBounty", questID = 91190, label = "Delver's Bounty", short = "DBnty",
+      hint = "Beacon of Hope" },
+
+    -- Arcantina — Khadgar's patron-tavern hub (unlocked via Arator's
+    -- Journey campaign chapter + Personal Key toy). Weekly visit slot
+    -- (quest 93767) confirmed resetting; the nine patron quests
+    -- (92319–92327) are a LIFETIME collection (Old Soldiers achievement
+    -- structure) and their flags persist. Annotated with running
+    -- collection progress via `progressIDs`. See memory:
+    --   brokermidnightevents-arcantina
+    { key = "arcantina", questID = 93767, label = "Arcantina", short = "Arc",
+      progressIDs = {
+          92319,  -- A Favor to Axe
+          92320,  -- Still Behind Enemy Portals
+          92321,  -- A Frostbitten Tally
+          92322,  -- Timear Foresees a Proof of Demise!
+          92323,  -- Where the Fire Once Burned
+          92324,  -- Uncrowned's Cold Case
+          92325,  -- Hellscream's Heritage
+          92326,  -- The Fragrance of the Dunes
+          92327,  -- A Generational Moment
+      },
+      progressLabel = "patrons",
+    },
 }
 
 -- Last-resort POI name lookup. C_AreaPoiInfo.GetAreaPOIInfo returns nil
