@@ -40,7 +40,7 @@ ns.weeklies = {
     { key = "stormarion",    questID = 94581, label = "Stand Your Ground",   short = "SYG",
       hint = "Stormarion Assault" },
     { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task",  short = "NightT",
-      hint = "Prey Hunts", levelMin = 90 },
+      hint = "Prey Hunts", objectiveRequired = 3, levelMin = 90 },
 
     -- Lady Liadrin's choice pool. She offers ~4 of 8 per char per week;
     -- completing one locks the others on that char. All freq=3, all reward

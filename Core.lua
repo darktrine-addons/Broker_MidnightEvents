@@ -1179,8 +1179,25 @@ local function BuildTooltip()
                                    .. DIM_OPEN .. "(" .. body .. progSeg .. ")" .. CLOSE
                     end
                 elseif w.hint then
-                    rowLabel = rowLabel .. " "
-                               .. DIM_OPEN .. "(" .. w.hint .. ")" .. CLOSE
+                    -- Optional live progress: when the row carries an
+                    -- objectiveRequired count, append "fulfilled/required"
+                    -- in warm gold inside the same grey parens. If the
+                    -- quest isn't in the active log we display 0/N — the
+                    -- honest "haven't picked it up yet" signal.
+                    local seg = DIM_OPEN .. "(" .. w.hint
+                    if w.objectiveRequired and w.questID
+                       and C_QuestLog and C_QuestLog.GetQuestObjectives then
+                        local fulfilled = 0
+                        local objs = C_QuestLog.GetQuestObjectives(w.questID)
+                        if objs and objs[1] and objs[1].numFulfilled then
+                            fulfilled = objs[1].numFulfilled
+                        end
+                        seg = seg .. ", " .. CLOSE
+                            .. PROG_OPEN .. fulfilled .. "/" .. w.objectiveRequired .. CLOSE
+                            .. DIM_OPEN
+                    end
+                    seg = seg .. ")" .. CLOSE
+                    rowLabel = rowLabel .. " " .. seg
                 end
                 -- Lifetime-collection progress annotation. Independent of
                 -- the weekly questID check above: `progressIDs` enumerates
