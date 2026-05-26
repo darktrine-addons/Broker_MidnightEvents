@@ -1100,7 +1100,12 @@ local function BuildTooltip()
     -- to check the map rather than a nag). Done rows fall to the bottom in
     -- dim grey with a green ✓ icon. The section header carries an at-a-glance
     -- 'X/Y done' summary so the player knows the status without scanning.
-    local showWB = not ns.db or ns.db.showWorldBosses ~= false
+    -- World Boss quest gates at max level (90) like the other endgame
+    -- weeklies. Sub-90 alts never see the credit, so hide the row to
+    -- avoid permanent ✗ noise. Confirmed 2026-05-26 on Alaelyne (lv 80).
+    local playerLevelForWB = UnitLevel and UnitLevel("player") or 0
+    local showWB = (not ns.db or ns.db.showWorldBosses ~= false)
+                   and playerLevelForWB >= 90
     local hasWeeklies = ns.weeklies and #ns.weeklies > 0
     if SectionEnabled("weekly") and (showWB or hasWeeklies) then
         local CHECK = "|A:common-icon-checkmark:14:14|a"
