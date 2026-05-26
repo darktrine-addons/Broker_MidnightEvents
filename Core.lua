@@ -406,6 +406,10 @@ end
 --                            choose-N-of-pool umbrella and the Void Assault
 --                            zone rotation pair)
 local function IsWeeklySlotDone(w)
+    if w.customDone then
+        local ok, v = pcall(w.customDone)
+        return ok and v or false
+    end
     if w.questID then
         return C_QuestLog.IsQuestFlaggedCompleted(w.questID) or false
     end
@@ -880,7 +884,12 @@ local function BuildTooltip()
             if isLongTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
-            local skip = ev.isLocked and not progPct
+            -- Prey is a weekly progression activity, not a timed event;
+            -- it's surfaced under This Week with per-tier counts. Drop
+            -- the POI's "Prey" row from Now so the section stays focused
+            -- on rows that actually carry time-to-fire information.
+            local skip = (ev.isLocked and not progPct)
+                      or (ev.name == "Prey")
             if not skip then
                 rows[#rows + 1] = {
                     ev = ev, secs = secs, kind = kind,
@@ -942,55 +951,7 @@ local function BuildTooltip()
                     vr, vg, vb = 0.65, 0.75, 0.95
                 end
             elseif kind == "ongoing" then
-                -- Prey row override: per-tier breakdown from quest-log
-                -- flags. The Eversong board's "Hunts Available" bars are
-                -- four mirrors of one weekly-total counter (verified
-                -- 2026-05-26 by completing a Nightmare hunt and watching
-                -- all four bars drop by 1), so they don't carry per-tier
-                -- granularity. Per-tier counts come from ns.preyQuests:
-                -- iterate the known prey questIDs, group flagged
-                -- completions by tier, render as
-                -- "Normal X/4 · Hard Y/4 · Nightmare Z/4" up to the
-                -- player's unlocked tier (derived from the shownState=1
-                -- bar's max — 4/8/12 = Normal/Hard/Nightmare unlock).
-                local pH = ns.char and ns.char.preyHunts
-                if ev.name and ev.name:find("Prey")
-                   and ns.preyQuests and C_QuestLog
-                   and C_QuestLog.IsQuestFlaggedCompleted then
-                    local counts = { normal = 0, hard = 0, nightmare = 0 }
-                    for qid, tier in pairs(ns.preyQuests) do
-                        if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-                            counts[tier] = (counts[tier] or 0) + 1
-                        end
-                    end
-                    -- Cap each tier at the per-tier weekly limit of 4.
-                    for t in pairs(counts) do
-                        if counts[t] > 4 then counts[t] = 4 end
-                    end
-                    -- Render only tiers up to the unlocked one. Without
-                    -- observed widget data, default to showing all three.
-                    -- Counts in warm gold (PROG_OPEN), labels + separators
-                    -- in grey (DIM_OPEN) — matches the colour hierarchy
-                    -- used by every other N/M weekly annotation.
-                    local DIM_OPEN, PROG_OPEN, CLOSE =
-                        "|cff909090", "|cffd9c97f", "|r"
-                    local function part(label, n)
-                        return DIM_OPEN .. label .. " " .. CLOSE
-                            .. PROG_OPEN .. n .. "/4" .. CLOSE
-                    end
-                    local unlockMax = (pH and pH.max) or 12
-                    local parts = { part("Normal", counts.normal) }
-                    if unlockMax >= 8 then
-                        parts[#parts + 1] = part("Hard", counts.hard)
-                    end
-                    if unlockMax >= 12 then
-                        parts[#parts + 1] = part("Nightmare", counts.nightmare)
-                    end
-                    valueText = table.concat(parts, DIM_OPEN .. " · " .. CLOSE)
-                    vr, vg, vb = CV_r, CV_g, CV_b
-                else
-                    valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
-                end
+                valueText, vr, vg, vb = "active", 0.6, 0.6, 0.6
             elseif kind == "wave" then
                 -- Continuous POI with an internal wave cycle. Show the
                 -- countdown to the next wave, rendered like an upcoming row.
@@ -1234,6 +1195,16 @@ local function BuildTooltip()
                                .. DIM_OPEN .. " "
                                .. (w.progressLabel or "done")
                                .. ")" .. CLOSE
+                end
+                -- Generic late-stage annotation hook. Lets a row supply
+                -- its own label-rewriter function for cases the picks /
+                -- hint / progressIDs paths can't express cleanly (e.g.
+                -- Prey Hunts' per-tier breakdown gated by unlock).
+                if w.customLabel then
+                    local ok, newLabel = pcall(w.customLabel, rowLabel)
+                    if ok and type(newLabel) == "string" then
+                        rowLabel = newLabel
+                    end
                 end
                 rows[#rows + 1] = {
                     label          = rowLabel,

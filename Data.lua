@@ -147,6 +147,56 @@ ns.weeklies = {
     { key = "haranir",       questID = 89268, label = "Lost Legends",        short = "LL",
       hint = "Legends of the Haranir" },
 
+    -- Prey Hunts — comprehensive weekly row backed by ns.preyQuests
+    -- (questID -> tier). Per-tier weekly cap is 4; total weekly cap
+    -- scales with unlocked tier (Normal=4, Hard=8, Nightmare=12).
+    -- customDone: row marked ✓ once flagged completions reach the
+    -- unlock-tier max (matches the in-room board's bar going to 0).
+    -- customLabel: appends "(Normal X/4 · Hard Y/4 · Nightmare Z/4)"
+    -- gated by unlocked tier — only renders tiers the char can do.
+    { key = "preyHunts", label = "Prey Hunts", short = "PreyH",
+      customDone = function()
+          if not (ns.preyQuests and C_QuestLog
+                  and C_QuestLog.IsQuestFlaggedCompleted) then return false end
+          local pH = ns.char and ns.char.preyHunts
+          local unlockMax = (pH and pH.max) or 12
+          local total = 0
+          for qid in pairs(ns.preyQuests) do
+              if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                  total = total + 1
+              end
+          end
+          if total > unlockMax then total = unlockMax end
+          return total >= unlockMax
+      end,
+      customLabel = function(rowLabel)
+          if not (ns.preyQuests and C_QuestLog
+                  and C_QuestLog.IsQuestFlaggedCompleted) then return rowLabel end
+          local pH = ns.char and ns.char.preyHunts
+          local unlockMax = (pH and pH.max) or 12
+          local counts = { normal = 0, hard = 0, nightmare = 0 }
+          for qid, tier in pairs(ns.preyQuests) do
+              if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                  counts[tier] = (counts[tier] or 0) + 1
+              end
+          end
+          for t in pairs(counts) do
+              if counts[t] > 4 then counts[t] = 4 end
+          end
+          local DIM, PROG, CLOSE = "|cff909090", "|cffd9c97f", "|r"
+          local function part(label, n)
+              return DIM .. label .. " " .. CLOSE .. PROG .. n .. "/4" .. CLOSE
+          end
+          local parts = { part("Normal", counts.normal) }
+          if unlockMax >= 8  then parts[#parts + 1] = part("Hard",      counts.hard)      end
+          if unlockMax >= 12 then parts[#parts + 1] = part("Nightmare", counts.nightmare) end
+          return rowLabel .. " "
+                 .. DIM .. "(" .. CLOSE
+                 .. table.concat(parts, DIM .. " · " .. CLOSE)
+                 .. DIM .. ")" .. CLOSE
+      end,
+    },
+
     -- A Gnawing Void of Curiosity — Naleidea Rivergleam's auto-credited
     -- weekly that fires on the first delve completion of the week. Reward
     -- is Voidlight Marl currency, so a T4+ tier gate is likely (Marl
