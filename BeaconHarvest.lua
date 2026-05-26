@@ -21,9 +21,21 @@ local addonName, ns = ...
 local ENABLED = true
 if not ENABLED then return end
 
-local TRACKED_QUEST_IDS = { 91190, 92799 }
-local SAMPLE_INTERVAL   = 60   -- seconds; cheap call, sample often inside delve
-local TRANSITION_RING   = 100  -- per-char; bounded so a long delve run doesn't bloat SV
+-- Quests under investigation. Add IDs here when a new "what triggers
+-- this flag?" question comes up. The harvester samples each on a
+-- 60s ticker (any zone), opportunistically on every QUEST_TURNED_IN /
+-- QUEST_REMOVED event, and records every false→true (and true→false)
+-- transition with the instance context at the moment of the flip.
+local TRACKED_QUEST_IDS = {
+    91190,  -- Delver's Bounty / Hidden Trove (confirmed weekly)
+    92799,  -- co-observed during Beacon harvest (lifetime/account flag, kept as control)
+    93767,  -- Arcantina weekly visit — credit trigger unknown; flips from
+            --   apparently unrelated activity (world boss, Liadrin's weekly).
+            --   Goal: identify what flipped it via correlated transitions.
+}
+local SAMPLE_INTERVAL   = 60   -- seconds; cheap call, no zone gate
+local TRANSITION_RING   = 200  -- per-char ring; bounded so always-on sampling can't bloat SV
+local SAMPLE_RING       = 300  -- per-char sample ring; ~5h of 60s sampling
 
 local function CharKey()
     return (GetRealmName() or "?") .. "/" .. (UnitName("player") or "?")
@@ -60,6 +72,12 @@ end
 -- live from IsQuestFlaggedCompleted each tick).
 local lastState = {}
 
+-- Last context label associated with a transition. Updated by event
+-- hooks (QUEST_TURNED_IN, QUEST_REMOVED) so when a flag flips within
+-- the same frame as a known quest event, the transition record carries
+-- the trigger candidate. Falls back to "ticker" for unattributed flips.
+local lastTrigger = "ticker"
+
 local function PushTransition(questID, fromState, toState)
     local b = Bucket()
     b.transitionCursor = b.transitionCursor + 1
@@ -69,31 +87,28 @@ local function PushTransition(questID, fromState, toState)
         questID  = questID,
         from     = fromState,
         to       = toState,
+        trigger  = lastTrigger,
         ctx      = InstanceContext(),
     }
     print(string.format(
-        "|cffffcc00MidnightEvents/BeaconHarvest|r quest %d: %s → %s (%s)",
+        "|cffffcc00MidnightEvents/BeaconHarvest|r quest %d: %s → %s [%s] (%s)",
         questID, tostring(fromState), tostring(toState),
-        InstanceContext().name or "?"))
+        lastTrigger, InstanceContext().name or "?"))
 end
 
 local function PushSample(states)
     local b = Bucket()
     b.sampleCursor = b.sampleCursor + 1
-    -- Samples are append-only without wrap; expect <60 samples/hour.
-    -- A multi-hour delve grind is fine; truly unbounded sessions can be
-    -- /reload-trimmed manually.
+    if b.sampleCursor > SAMPLE_RING then b.sampleCursor = 1 end
     b.samples[b.sampleCursor] = {
-        t      = time(),
-        states = states,
-        ctx    = InstanceContext(),
+        t       = time(),
+        states  = states,
+        trigger = lastTrigger,
+        ctx     = InstanceContext(),
     }
 end
 
 local function Sample()
-    local _, instanceType = IsInInstance()
-    if instanceType ~= "scenario" then return end
-
     local states = {}
     for _, qid in ipairs(TRACKED_QUEST_IDS) do
         local now = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
@@ -121,13 +136,30 @@ local function StartTicker()
 end
 
 -- Take a sample immediately on entering an instance so we capture the
--- pre-activity baseline without waiting up to a full interval.
+-- pre-activity baseline without waiting up to a full interval. Also
+-- sample on every QUEST_TURNED_IN / QUEST_REMOVED so flag transitions
+-- get correlated with the specific quest event that may have caused
+-- them — invaluable for the Arcantina 93767 mystery where adjacent
+-- activity (world boss / Liadrin) flipped the flag without an obvious
+-- direct credit path.
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-f:SetScript("OnEvent", function()
+f:RegisterEvent("QUEST_TURNED_IN")
+f:RegisterEvent("QUEST_REMOVED")
+f:SetScript("OnEvent", function(_, event, arg1)
+    if event == "QUEST_TURNED_IN" then
+        lastTrigger = "QUEST_TURNED_IN:" .. tostring(arg1)
+    elseif event == "QUEST_REMOVED" then
+        lastTrigger = "QUEST_REMOVED:" .. tostring(arg1)
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        lastTrigger = "PLAYER_ENTERING_WORLD"
+    elseif event == "ZONE_CHANGED_NEW_AREA" then
+        lastTrigger = "ZONE_CHANGED_NEW_AREA"
+    end
     StartTicker()
     Sample()
+    lastTrigger = "ticker"  -- reset so background ticker samples don't claim event credit
 end)
 
 -- Slash command surface — quick at-a-glance status + manual sample trigger.

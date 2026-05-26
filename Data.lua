@@ -154,8 +154,12 @@ ns.weeklies = {
     -- confirms weekly cadence even though Wowhead misclassifies it as
     -- one-time. Re-verify reset behaviour on first weekly cycle; rip if
     -- 93784 doesn't actually clear.
+    -- Confirmed warband-shared 2026-05-26: Artherio's completion auto-
+    -- credited Shatanaris (93784=true on Sha before she ran any delve
+    -- this week). The reward (Voidlight Marl) still implies a T4+ gate
+    -- at the credit boundary, but the credit propagates to alts.
     { key = "gnawingVoid",   questID = 93784, label = "Gnawing Curiosity", short = "GnawC",
-      hint = "first delve T4+" },
+      hint = "warband first delve T4+" },
 
     -- Delver's Bounty weekly. The Beacon of Hope → Nullaeus → Delver's
     -- Bounty → Hidden Trove chain. Single trackable flag 91190 is an
