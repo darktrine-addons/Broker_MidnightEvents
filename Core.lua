@@ -1040,6 +1040,7 @@ local function BuildTooltip()
         end
         if hasWeeklies then
             for _, w in ipairs(ns.weeklies) do
+                if w.hideInTooltip then goto continue end
                 local rowLabel = w.label
                 -- Annotation color hierarchy:
                 --   * Row name (white, set by AddDoubleLine) — the
@@ -1119,6 +1120,7 @@ local function BuildTooltip()
                     done           = weeklyState[w.key] or false,
                     readyForTurnIn = IsWeeklyReadyForTurnIn(w),
                 }
+                ::continue::
             end
         end
 

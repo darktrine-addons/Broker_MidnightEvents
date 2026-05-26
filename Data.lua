@@ -173,7 +173,17 @@ ns.weeklies = {
     -- structure) and their flags persist. Annotated with running
     -- collection progress via `progressIDs`. See memory:
     --   brokermidnightevents-arcantina
+    -- Tooltip output suppressed pending investigation: 93767 flips true
+    -- from non-Arcantina activity (e.g. on Artherio 2026-05-26 it went
+    -- true after world boss / Liadrin's weekly, before any Arcantina
+    -- interaction). Per-char (Shatanaris stayed false post-reset), so
+    -- not account-wide, but the credit condition is broader than the
+    -- quest's name suggests. Data path stays warm — `hideInTooltip`
+    -- only skips the rendering step in This Week, RefreshWeeklies
+    -- continues to populate ns.char.weeklies.arcantina so future
+    -- probes can correlate triggers.
     { key = "arcantina", questID = 93767, label = "Arcantina", short = "Arc",
+      hideInTooltip = true,
       progressIDs = {
           92319,  -- A Favor to Axe
           92320,  -- Still Behind Enemy Portals
