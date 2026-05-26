@@ -123,11 +123,11 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
-### v0.9.3-beta — more weeklies
+### v0.9.4-beta — Alts panel polish
 
-**New features:**
-- **Featured Dungeon** weekly row, tracking Halduron Brightwing's "do one Midnight dungeon" quest from the Silvermoon tent. Renders as `Featured Dungeon (<dungeon name>)` once you've picked up this week's variant — eight dungeons rotate, one per week, any difficulty counts (Follower included).
-- **Bonus Event Weekly** now recognises **Emissary of War** (Mythic Dungeons variant) alongside the Delves and Battle variants already tracked. The row reads `Bonus Event Weekly (Dungeons picked, X/4)` on dungeon weeks.
+**Improvements:**
+- **Alts panel auto-sizes to its columns** so the recently-added rows (Featured Dungeon, Hope, Prey Hunts, Gnawing Curiosity, Delver's Bounty, …) no longer spill past the right edge.
+- **Level-gated rows show `—` (em-dash) instead of `✗`** on characters that can't yet do them — sub-90 alts no longer read as having "missed" the World Boss, Liadrin's Weekly, etc.
 
 ### v0.9.3-beta — more weeklies + smarter Prey + level-aware tooltip
 

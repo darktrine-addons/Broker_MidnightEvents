@@ -11,12 +11,18 @@ local addonName, ns = ...
 ns.AltsPanel = ns.AltsPanel or {}
 
 -- ── Layout constants ──────────────────────────────────────────────────────────
-local FRAME_WIDTH   = 620
 local FRAME_HEIGHT  = 380
 local ROW_HEIGHT    = 22
 local NAME_WIDTH    = 110
 local CELL_WIDTH    = 60
 local HEADER_HEIGHT = 22
+local FRAME_PADDING = 50   -- right-side gutter accommodating the close button + scrollbar
+
+-- Frame width is derived from the active column count at render time. Falls
+-- back to a sane minimum if columns aren't built yet.
+local function ComputeFrameWidth(columnCount)
+    return math.max(360, NAME_WIDTH + columnCount * CELL_WIDTH + FRAME_PADDING)
+end
 
 local CHECK = "|A:common-icon-checkmark:14:14|a"
 local CROSS = "|A:common-icon-redx:14:14|a"
@@ -66,15 +72,23 @@ local function GetColumns()
     if showWB then
         cols[#cols + 1] = {
             key = "_boss", short = "WBoss", label = "World Boss", kind = "boss",
+            levelMin = 90,  -- World Boss credit gates at max level; cells DASH below it.
         }
     end
     for _, w in ipairs(ns.weeklies or {}) do
-        cols[#cols + 1] = {
-            key   = w.key,
-            short = w.short or w.label or w.key,
-            label = w.label or w.short or w.key,
-            kind  = "weekly",
-        }
+        -- Mirror the tooltip's hideInTooltip suppression so suppressed rows
+        -- (e.g. Arcantina pending its credit-trigger investigation) don't
+        -- clutter the panel either.
+        if not w.hideInTooltip then
+            cols[#cols + 1] = {
+                key      = w.key,
+                short    = w.short or w.label or w.key,
+                label    = w.label or w.short or w.key,
+                kind     = "weekly",
+                levelMin = w.levelMin,
+                levelMax = w.levelMax,
+            }
+        end
     end
     return cols
 end
@@ -217,9 +231,18 @@ local function PopulateRow(row, charKey, char, columns, currentWeeklyReset, isHi
     row.name:SetTextColor(r, g, b)
 
     local weeklies = char.weeklies or {}
+    local charLevel = char.level or 0
     for i, col in ipairs(columns) do
         local cell = GetCell(row, i)
+        local levelGated = (col.levelMin and charLevel > 0 and charLevel < col.levelMin)
+                        or (col.levelMax and charLevel > col.levelMax)
         if isStale then
+            cell:SetText(DASH)
+            cell:SetTextColor(0.4, 0.4, 0.4)
+        elseif levelGated then
+            -- Row unavailable on this character (sub-90 alt, etc.). Render
+            -- DASH so the cell is honest about "not applicable" rather than
+            -- showing a permanent ✗ that misreads as "they could but didn't".
             cell:SetText(DASH)
             cell:SetTextColor(0.4, 0.4, 0.4)
         elseif col.kind == "boss" then
@@ -259,7 +282,7 @@ local function HeaderCellOnLeave()
 end
 
 local function RenderHeader(columns)
-    panel.header:SetWidth(FRAME_WIDTH - 24)
+    panel.header:SetWidth(panel:GetWidth() - 24)
     panel.header.nameLabel:SetText("Char")
     for i, col in ipairs(columns) do
         local cell = panel.header.cells[i]
@@ -308,6 +331,13 @@ local function Render()
     if not panel or not panel:IsShown() then return end
 
     local cols = GetColumns()
+    -- Resize the panel to fit the active column count. Settings can flip
+    -- World Boss visibility, levelMin/levelMax can hide rows on character
+    -- transitions — so width is computed each render rather than cached.
+    local desiredWidth = ComputeFrameWidth(#cols)
+    if panel:GetWidth() ~= desiredWidth then
+        panel:SetWidth(desiredWidth)
+    end
     RenderHeader(cols)
 
     local chars = CollectChars()
@@ -316,7 +346,7 @@ local function Render()
     -- Resize content for scroll math.
     local contentHeight = math.max(1, #chars * ROW_HEIGHT)
     panel.content:SetHeight(contentHeight)
-    panel.content:SetWidth(FRAME_WIDTH - 60)
+    panel.content:SetWidth(desiredWidth - 60)
 
     for i, entry in ipairs(chars) do
         if not rowPool[i] then
@@ -350,7 +380,10 @@ end
 local function CreatePanel()
     local f = CreateFrame("Frame", "BrokerMidnightEventsAltsPanel",
                           UIParent, "BasicFrameTemplateWithInset")
-    f:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
+    -- Width is set/refreshed each Render() based on column count; pick an
+    -- initial sane size so the frame has a footprint before the first
+    -- render computes the real width.
+    f:SetSize(ComputeFrameWidth(#GetColumns()), FRAME_HEIGHT)
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
     f:EnableMouse(true)

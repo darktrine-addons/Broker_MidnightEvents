@@ -99,6 +99,7 @@ sf:SetScript("OnEvent", function(self, event, name)
     -- key into RAID_CLASS_COLORS.
     local _, classFile = UnitClass("player")
     if classFile then char.class = classFile end
+    char.level = UnitLevel("player") or char.level or 0
 
     -- Phase 10: bountiful delve completion cache (daily-reset cycle).
     -- bountifulSeen is the snapshot of bountifuls observed today; entries
