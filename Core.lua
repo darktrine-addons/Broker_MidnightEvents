@@ -928,6 +928,17 @@ local function BuildTooltip()
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
                           or  (ev.name or "Event")
+            -- Append the active-zone label for events that rotate across
+            -- Midnight zones (Void Assaults: Eversong / Zul'Aman / ...).
+            -- ev.zoneName fills in even when the player is outside the
+            -- active zone, via Events.lua's zoneByName side table. Skip
+            -- the append when the zone already appears in the event name
+            -- to avoid "Abundance: Mining Voidburrow (Voidstorm)"
+            -- redundancy.
+            if ev.name == "Void Assaults" and ev.zoneName
+               and not ev.name:find(ev.zoneName, 1, true) then
+                label = label .. " |cff909090(" .. ev.zoneName .. ")|r"
+            end
 
             local valueText, vr, vg, vb
             if firing then

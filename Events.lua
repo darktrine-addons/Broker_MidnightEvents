@@ -408,14 +408,28 @@ local function Refresh()
     --    progress percentage so the player can decide whether to chase the
     --    location. The Now-section renderer skips locked events that have
     --    no extractable progress data (covers genuinely-unavailable POIs).
+    -- Side table: event name → zone label, populated by the per-zone scan
+    -- regardless of poiID dedup. Lets us recover the active zone for
+    -- multi-zone-rotating events (Void Assaults, Prey, ...) whose canonical
+    -- POI lives on the continent map and so doesn't carry zoneName when
+    -- the continent scan wins dedup. Filled before merging into state.active
+    -- so the post-loop enrichment step can use it without re-scanning.
+    local zoneByName = {}
     if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
-        local function scanMap(mapID)
+        local function scanMap(mapID, isZone)
             local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
             for _, poiID in ipairs(ids) do
-                if not seen[poiID] then
-                    local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
-                    if info and info.isCurrentEvent
-                       and LooksLikeEventAtlas(info.atlasName)
+                local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
+                if info and info.isCurrentEvent
+                   and LooksLikeEventAtlas(info.atlasName) then
+                    if isZone and info.name and not zoneByName[info.name] then
+                        local mi = C_Map and C_Map.GetMapInfo
+                                   and C_Map.GetMapInfo(mapID)
+                        if mi and mi.name then
+                            zoneByName[info.name] = mi.name
+                        end
+                    end
+                    if not seen[poiID]
                        and not (info.name and seenNames[info.name]) then
                         state.active[#state.active + 1] =
                             BuildMapEntry(poiID, info, mapID)
@@ -425,9 +439,18 @@ local function Refresh()
                 end
             end
         end
-        scanMap(state.continentMapID)
+        scanMap(state.continentMapID, false)
         for _, zoneMapID in ipairs(MIDNIGHT_ZONES) do
-            scanMap(zoneMapID)
+            scanMap(zoneMapID, true)
+        end
+        -- Enrich state.active entries that the continent-variant won
+        -- dedup for, by lifting the zone label from the same-named POI
+        -- on a Midnight zone map.
+        for _, ev in ipairs(state.active) do
+            if (not ev.zoneName or ev.zoneName == "")
+               and ev.name and zoneByName[ev.name] then
+                ev.zoneName = zoneByName[ev.name]
+            end
         end
     end
 
