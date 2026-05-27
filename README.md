@@ -123,6 +123,14 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.6-beta — Saltheril's Soiree row
+
+**New features:**
+- **Saltheril's Soiree** is now a tracked weekly in This Week. Pick one of four subfactions from Lord Saltheril (Magisters / Blood Knights / Farstriders / Shades of the Row); the row annotates `(<subfaction> picked)` once the Fortify the Runestones variant lands in your log, and ✓ when it's complete. Sub-90 alts skip the row (gated on max level).
+
+**Improvements:**
+- **Soiree drops out of Now** alongside Prey — it's a weekly progression activity, not a timed event, so the dedicated This Week row owns its display.
+
 ### v0.9.5-beta — zone labels in Now + objective counts + Skinning Den fix
 
 **New features:**

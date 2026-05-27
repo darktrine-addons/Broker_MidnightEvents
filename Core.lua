@@ -884,12 +884,14 @@ local function BuildTooltip()
             if isLongTimer(ev, secs) then
                 secs, kind = nil, "ongoing"
             end
-            -- Prey is a weekly progression activity, not a timed event;
-            -- it's surfaced under This Week with per-tier counts. Drop
-            -- the POI's "Prey" row from Now so the section stays focused
-            -- on rows that actually carry time-to-fire information.
+            -- Prey + Saltheril's Soiree are weekly progression activities,
+            -- not timed events; they're surfaced under This Week with
+            -- pick / completion state. Drop their continuously-active POI
+            -- rows from Now so the section stays focused on rows that
+            -- actually carry time-to-fire information.
             local skip = (ev.isLocked and not progPct)
                       or (ev.name == "Prey")
+                      or (ev.name == "Saltheril's Soiree")
             if not skip then
                 rows[#rows + 1] = {
                     ev = ev, secs = secs, kind = kind,
