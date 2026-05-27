@@ -123,6 +123,15 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.5-beta — zone labels in Now + objective counts + Skinning Den fix
+
+**New features:**
+- **Now-section events show their active zone in parentheses** — e.g. `Void Assaults (Eversong Woods)`, `Saltheril's Soiree (Eversong Woods)`. The label fills in even when you're outside the active zone (uses the canonical-zone signal from the POI data). Events whose name already carries the zone (Abundance variants) skip the suffix to avoid `Abundance: Mining Voidburrow (Voidstorm)` redundancy.
+- **A Nightmarish Task** now appends live objective progress: `A Nightmarish Task (Prey Hunts, 1/3)`. Reads from the active quest log; falls back to `0/3` when the quest isn't picked up yet.
+
+**Fixes:**
+- **Abundance: Skinning Den** now correctly reads as `(Zul'Aman)` instead of `(Eversong Woods)`. Blizzard cross-lists the POI in adjacent zones' map data; we now honour the `isPrimaryMapForPOI` flag so the canonical zone wins.
+
 ### v0.9.4-beta — Alts panel polish
 
 **Improvements:**
