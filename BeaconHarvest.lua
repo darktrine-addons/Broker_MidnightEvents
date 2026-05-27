@@ -32,6 +32,27 @@ local TRACKED_QUEST_IDS = {
     93767,  -- Arcantina weekly visit — credit trigger unknown; flips from
             --   apparently unrelated activity (world boss, Liadrin's weekly).
             --   Goal: identify what flipped it via correlated transitions.
+    89289,  -- Saltheril's Soiree weekly turn-in ("Favor of the Court") —
+            --   suspected weekly reset; need to confirm post-2026-06-02 reset
+            --   that the flag clears (vs. lifetime persistence trap).
+}
+
+-- Quest titles / giver substrings that, when seen on QUEST_ACCEPTED,
+-- flag a discovery worth recording. Used to enumerate the Soiree
+-- pick / sub-quest pool dynamically as the player engages with the
+-- event over coming resets — we don't know all the questIDs yet, so
+-- match by accept-time metadata and log everything that smells right.
+local DISCOVERY_PATTERNS = {
+    titleContains = {
+        "Soiree",
+        "Saltheril",
+        "Favor of the Court",
+        "Patron",   -- speculative; Soiree may use this phrasing for patron sub-quests
+    },
+    giverContains = {
+        "Saltheril",
+        "Lord Saltheril",
+    },
 }
 local SAMPLE_INTERVAL   = 60   -- seconds; cheap call, no zone gate
 local TRANSITION_RING   = 200  -- per-char ring; bounded so always-on sampling can't bloat SV
@@ -135,16 +156,69 @@ local function StartTicker()
     ticker = C_Timer.NewTicker(SAMPLE_INTERVAL, Sample)
 end
 
+-- Saltheril's Soiree discovery logger. On QUEST_ACCEPTED, if the new
+-- quest's title or giver matches the Soiree DISCOVERY_PATTERNS, push
+-- a record into Broker_MidnightEventsBeacon.discoveries with title +
+-- giver + frequency and echo to chat so the player can see at a glance
+-- "we just learned about quest 12345 'Patron's Favor' from Lady X".
+-- Lets us enumerate the pick + sub-quest pool over coming resets
+-- without manual /mediag-and-grep cycles.
+local function MatchesDiscovery(title, giver)
+    if title then
+        for _, pat in ipairs(DISCOVERY_PATTERNS.titleContains) do
+            if title:find(pat, 1, true) then return true end
+        end
+    end
+    if giver then
+        for _, pat in ipairs(DISCOVERY_PATTERNS.giverContains) do
+            if giver:find(pat, 1, true) then return true end
+        end
+    end
+    return false
+end
+
+local function LogDiscovery(questID)
+    if not questID then return end
+    local title = C_QuestLog and C_QuestLog.GetTitleForQuestID
+                  and C_QuestLog.GetTitleForQuestID(questID)
+    -- Giver isn't directly query-able from a questID alone; the harvest
+    -- catalogue (DevHarvest.lua) captures it on the QUEST_ACCEPTED
+    -- pendingGiver path, so cross-reference the catalogue here.
+    local cat = Broker_MidnightEventsQuestCatalogue or {}
+    local rec = cat[tostring(questID)]
+    local giver = rec and rec.giver
+    local freq  = rec and rec.frequency
+    if not MatchesDiscovery(title, giver) then return end
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    Broker_MidnightEventsBeacon.discoveries = Broker_MidnightEventsBeacon.discoveries or {}
+    local key = tostring(questID)
+    if Broker_MidnightEventsBeacon.discoveries[key] then return end  -- already known
+    Broker_MidnightEventsBeacon.discoveries[key] = {
+        questID   = questID,
+        title     = title or "?",
+        giver     = giver or "?",
+        frequency = freq,
+        firstSeen = time(),
+        char      = CharKey(),
+        context   = InstanceContext(),
+    }
+    print(string.format(
+        "|cffffcc00MidnightEvents/Soiree|r discovered quest %d %q from %s (freq=%s)",
+        questID, title or "?", giver or "?", tostring(freq)))
+end
+
 -- Take a sample immediately on entering an instance so we capture the
 -- pre-activity baseline without waiting up to a full interval. Also
 -- sample on every QUEST_TURNED_IN / QUEST_REMOVED so flag transitions
 -- get correlated with the specific quest event that may have caused
 -- them — invaluable for the Arcantina 93767 mystery where adjacent
 -- activity (world boss / Liadrin) flipped the flag without an obvious
--- direct credit path.
+-- direct credit path. QUEST_ACCEPTED triggers Soiree discovery
+-- logging in addition to the transition sample.
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+f:RegisterEvent("QUEST_ACCEPTED")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("QUEST_REMOVED")
 f:SetScript("OnEvent", function(_, event, arg1)
@@ -152,6 +226,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
         lastTrigger = "QUEST_TURNED_IN:" .. tostring(arg1)
     elseif event == "QUEST_REMOVED" then
         lastTrigger = "QUEST_REMOVED:" .. tostring(arg1)
+    elseif event == "QUEST_ACCEPTED" then
+        lastTrigger = "QUEST_ACCEPTED:" .. tostring(arg1)
+        LogDiscovery(arg1)
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastTrigger = "PLAYER_ENTERING_WORLD"
     elseif event == "ZONE_CHANGED_NEW_AREA" then
