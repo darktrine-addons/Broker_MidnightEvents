@@ -415,6 +415,7 @@ local function Refresh()
     -- the continent scan wins dedup. Filled before merging into state.active
     -- so the post-loop enrichment step can use it without re-scanning.
     local zoneByName = {}
+    local zoneByNameLocked = {}  -- name → true once set from an isPrimaryMapForPOI hit
     if C_AreaPoiInfo and C_AreaPoiInfo.GetEventsForMap then
         local function scanMap(mapID, isZone)
             local ids = C_AreaPoiInfo.GetEventsForMap(mapID) or {}
@@ -422,11 +423,28 @@ local function Refresh()
                 local info = C_AreaPoiInfo.GetAreaPOIInfo(mapID, poiID)
                 if info and info.isCurrentEvent
                    and LooksLikeEventAtlas(info.atlasName) then
-                    if isZone and info.name and not zoneByName[info.name] then
-                        local mi = C_Map and C_Map.GetMapInfo
-                                   and C_Map.GetMapInfo(mapID)
-                        if mi and mi.name then
-                            zoneByName[info.name] = mi.name
+                    -- Zone-label lookup. The same POI can appear in multiple
+                    -- adjacent zone maps' GetEventsForMap data (Abundance:
+                    -- Skinning Den is keyed Zul'Aman but also surfaces in
+                    -- Eversong's map data). Prefer the map where Blizzard
+                    -- flags isPrimaryMapForPOI = true so we tag the
+                    -- canonical zone, not whichever map scanned first.
+                    -- Non-primary hits only fill the cache as a fallback
+                    -- when no primary has been seen yet, and never
+                    -- overwrite a primary-locked entry.
+                    if isZone and info.name then
+                        local isPrimary = info.isPrimaryMapForPOI and true or false
+                        if isPrimary or not zoneByNameLocked[info.name] then
+                            if isPrimary or not zoneByName[info.name] then
+                                local mi = C_Map and C_Map.GetMapInfo
+                                           and C_Map.GetMapInfo(mapID)
+                                if mi and mi.name then
+                                    zoneByName[info.name] = mi.name
+                                    if isPrimary then
+                                        zoneByNameLocked[info.name] = true
+                                    end
+                                end
+                            end
                         end
                     end
                     if not seen[poiID]
