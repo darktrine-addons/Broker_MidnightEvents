@@ -1130,11 +1130,19 @@ local function BuildTooltip()
         -- Build a unified row list so outstanding-first sort applies uniformly.
         local rows = {}
         if showWB then
+            -- Match the rest of the rows' shape: boss name appears as a
+            -- grey parenthetical hint in the label, value column shows
+            -- only the ✓/✗ icon. Avoids the visual asymmetry where this
+            -- one row carried inline text in the value column.
+            local wbLabel = "World Boss"
+            if wb.name and wb.name ~= "" then
+                wbLabel = wbLabel .. " |cff909090(" .. wb.name .. ")|r"
+            end
             rows[#rows + 1] = {
-                label       = "World Boss",
+                label       = wbLabel,
                 done        = wb.done or false,
                 isWorldBoss = true,
-                bossName    = wb.name,
+                bossName    = wb.name,  -- kept on the row for any other consumer
             }
         end
         if hasWeeklies then
@@ -1279,13 +1287,12 @@ local function BuildTooltip()
             local valueText, vR, vG, vB
 
             if r.done then
-                -- Done: dim grey label, green checkmark, plus boss name when relevant.
+                -- Done: dim grey label, green checkmark. World Boss name
+                -- now rides in the label as a grey parenthetical hint
+                -- (set during row construction), so the value column
+                -- stays uniform across rows.
                 labelR, labelG, labelB = 0.55, 0.55, 0.55
-                if r.isWorldBoss and r.bossName then
-                    valueText = CHECK .. "  " .. r.bossName
-                else
-                    valueText = CHECK
-                end
+                valueText = CHECK
                 vR, vG, vB = 0.6, 0.6, 0.6
             elseif r.readyForTurnIn then
                 -- Objectives are met but the player hasn't formally handed
