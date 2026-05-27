@@ -159,6 +159,44 @@ ns.weeklies = {
     { key = "haranir",       questID = 89268, label = "Lost Legends",        short = "LL",
       hint = "Legends of the Haranir" },
 
+    -- Saltheril's Soiree — weekly pick from Lord Saltheril. The pinnacle
+    -- 'Favor of the Court' (89289) gives 4 subfaction choices that gate
+    -- one 'Fortify the Runestones' (90573–90576) variant for the week.
+    -- Pool semantics:
+    --   89289 is the pick quest; flags complete on subfaction choice
+    --   90573/4/5/6 — the gated pinnacle weeklies, one per subfaction
+    -- 'Any pool member flagged' = done covers both '89289 chosen but
+    -- Fortify not finished' and 'Fortify completed' states.
+    -- Reward for the pinnacle: Surplus Bag of Party Favors (150 Brimming
+    -- Arcana + 300 subfaction rep + 2,000 Silvermoon Court rep).
+    --
+    -- Picks map keyed on the Fortify questIDs (not 89289) — DetectWeeklyPicks
+    -- writes the picked subfaction label once the Fortify quest enters the
+    -- log. Before the Fortify accept the row shows un-annotated.
+    --
+    -- The pool extends with ~30 Favor-unlocked weeklies surfaced via vendor
+    -- token spend (Apprentice Diell / Armorer Goldcrest / Ranger Allorn /
+    -- Neriv). 3 known (91984 Sungrub Silk, 91979 Chop It Down, 91978
+    -- Taxing the Tideborne). BeaconHarvest's discovery logger fills the
+    -- rest as the player engages — pool not in the row schema yet because
+    -- we don't have enough IDs to render a stable X/N count.
+    { key = "soiree", label = "Saltheril's Soiree", short = "Soir",
+      levelMin = 90,
+      questIDs = {
+          89289,  -- Favor of the Court (weekly pick)
+          90573,  -- Fortify the Runestones: Magisters
+          90574,  -- Fortify the Runestones: Blood Knights
+          90575,  -- Fortify the Runestones: Farstriders
+          90576,  -- Fortify the Runestones: Shades of the Row
+      },
+      picks = {
+          [90573] = "Magisters",
+          [90574] = "Blood Knights",
+          [90575] = "Farstriders",
+          [90576] = "Shades of the Row",
+      },
+    },
+
     -- Prey Hunts — comprehensive weekly row backed by ns.preyQuests
     -- (questID -> tier). Per-tier weekly cap is 4; total weekly cap
     -- scales with unlocked tier (Normal=4, Hard=8, Nightmare=12).

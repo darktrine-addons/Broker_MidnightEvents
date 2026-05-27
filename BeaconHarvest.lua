@@ -47,11 +47,22 @@ local DISCOVERY_PATTERNS = {
         "Soiree",
         "Saltheril",
         "Favor of the Court",
-        "Patron",   -- speculative; Soiree may use this phrasing for patron sub-quests
+        "Fortify the Runestones",  -- 4 pinnacle weeklies (90573-90576)
+        "High Esteem",              -- one-time unlock chain
+        "Subtle Game",
     },
     giverContains = {
         "Saltheril",
         "Lord Saltheril",
+        -- Subfaction vendors — Favor tokens spent here unlock the
+        -- ~30 sub-weeklies in the pool. Every QUEST_ACCEPTED from
+        -- one of these names is interesting evidence.
+        "Caeris Fairdawn",
+        "Apprentice Diell",
+        "Armorer Goldcrest",
+        "Ranger Allorn",
+        "Neriv",
+        "Talenia Flamesong",
     },
 }
 local SAMPLE_INTERVAL   = 60   -- seconds; cheap call, no zone gate
