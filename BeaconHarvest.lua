@@ -104,6 +104,27 @@ end
 -- live from IsQuestFlaggedCompleted each tick).
 local lastState = {}
 
+-- Candidate-flip buffer for transition confirmation. C_QuestLog
+-- .IsQuestFlaggedCompleted returns false during the quest-log hydration
+-- window right after PLAYER_ENTERING_WORLD even for genuinely-completed
+-- quests, then snaps back to true once the cache fills. Recording those
+-- transient flips would (and did) drown the real signal in noise.
+--
+-- Approach: when a sample disagrees with lastState, hold it as a
+-- candidate and require it to persist for N consecutive samples before
+-- promoting to a real transition. Resets if the value reverts before
+-- the threshold.
+local CONFIRMATION_SAMPLES = 2  -- count AFTER the first observation
+local candidate = {}            -- qid → { newState, samplesSeen, firstSeenAt, firstTrigger }
+
+-- PEW debounce: ignore samples for SAMPLE_DEBOUNCE_AFTER_PEW seconds
+-- after PLAYER_ENTERING_WORLD. The IsQuestFlaggedCompleted cache is
+-- particularly unreliable in this window. We still tag the trigger
+-- (so when a real transition happens MUCH later it gets attributed
+-- correctly), but skip the actual flag read until the cache hydrates.
+local SAMPLE_DEBOUNCE_AFTER_PEW = 10
+local lastPEWAt = 0
+
 -- Last context label associated with a transition. Updated by event
 -- hooks (QUEST_TURNED_IN, QUEST_REMOVED) so when a flag flips within
 -- the same frame as a known quest event, the transition record carries
@@ -141,6 +162,13 @@ local function PushSample(states)
 end
 
 local function Sample()
+    -- PEW debounce: drop the sample entirely if we're still inside the
+    -- quest-log hydration window. Avoids false 'true -> false -> true'
+    -- bounces that don't reflect real state changes.
+    if lastPEWAt > 0 and (time() - lastPEWAt) < SAMPLE_DEBOUNCE_AFTER_PEW then
+        return
+    end
+
     local states = {}
     for _, qid in ipairs(TRACKED_QUEST_IDS) do
         local now = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
@@ -148,10 +176,42 @@ local function Sample()
         states[qid] = now
         local prev = lastState[qid]
         if prev == nil then
+            -- First observation seeds lastState without firing a transition.
             lastState[qid] = now
+            candidate[qid] = nil
         elseif prev ~= now then
-            PushTransition(qid, prev, now)
-            lastState[qid] = now
+            -- Disagreement with established state. Open or extend the
+            -- candidate flip; only promote to a recorded transition once
+            -- the new value has held for CONFIRMATION_SAMPLES ticks.
+            local c = candidate[qid]
+            if c and c.newState == now then
+                c.samplesSeen = c.samplesSeen + 1
+                if c.samplesSeen >= CONFIRMATION_SAMPLES then
+                    -- Attribute to the trigger active at the moment the
+                    -- new value was FIRST observed — that's the moment
+                    -- the player did the thing that flipped the flag,
+                    -- not the later confirming sample.
+                    local savedTrigger = lastTrigger
+                    lastTrigger = c.firstTrigger or lastTrigger
+                    PushTransition(qid, prev, now)
+                    lastTrigger = savedTrigger
+                    lastState[qid] = now
+                    candidate[qid] = nil
+                end
+            else
+                -- New candidate (or contradicts a prior one going the
+                -- opposite direction — restart).
+                candidate[qid] = {
+                    newState     = now,
+                    samplesSeen  = 1,
+                    firstSeenAt  = time(),
+                    firstTrigger = lastTrigger,
+                }
+            end
+        else
+            -- Value reverted to lastState before confirmation: drop the
+            -- candidate flip as transient noise.
+            candidate[qid] = nil
         end
     end
     PushSample(states)
@@ -242,6 +302,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
         LogDiscovery(arg1)
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastTrigger = "PLAYER_ENTERING_WORLD"
+        lastPEWAt   = time()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         lastTrigger = "ZONE_CHANGED_NEW_AREA"
     end
