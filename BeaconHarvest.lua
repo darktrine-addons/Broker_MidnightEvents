@@ -127,12 +127,15 @@ local lastState = {}
 local CONFIRMATION_SAMPLES = 1  -- count AFTER the first observation
 local candidate = {}            -- qid → { newState, samplesSeen, firstSeenAt, firstTrigger }
 
--- PEW debounce: ignore samples for SAMPLE_DEBOUNCE_AFTER_PEW seconds
--- after PLAYER_ENTERING_WORLD. The IsQuestFlaggedCompleted cache is
--- particularly unreliable in this window. We still tag the trigger
--- (so when a real transition happens MUCH later it gets attributed
--- correctly), but skip the actual flag read until the cache hydrates.
-local SAMPLE_DEBOUNCE_AFTER_PEW = 10
+-- Loading-screen debounce: ignore samples for this many seconds after a
+-- PLAYER_ENTERING_WORLD *or* ZONE_CHANGED_NEW_AREA. IsQuestFlaggedCompleted
+-- reads unreliable across the whole hydration window — empirically the
+-- false<->true bounces from a mage-portal delve exit spanned ~35s, so 10s
+-- was too short. 45s covers it. The multi-flip filter in Sample() is the
+-- primary defence (catches mid-session noise too); this window adds
+-- belt-and-braces coverage for single-quest hydration bounces during
+-- loads, which the multi-flip check can't see.
+local SAMPLE_DEBOUNCE_AFTER_PEW = 45
 local lastPEWAt = 0
 
 -- Last context label associated with a transition. Updated by event
@@ -159,7 +162,7 @@ local function PushTransition(questID, fromState, toState)
         lastTrigger, InstanceContext().name or "?"))
 end
 
-local function PushSample(states)
+local function PushSample(states, note)
     local b = Bucket()
     b.sampleCursor = b.sampleCursor + 1
     if b.sampleCursor > SAMPLE_RING then b.sampleCursor = 1 end
@@ -167,22 +170,49 @@ local function PushSample(states)
         t       = time(),
         states  = states,
         trigger = lastTrigger,
+        note    = note,   -- e.g. "noise:multiflip"; nil for ordinary samples
         ctx     = InstanceContext(),
     }
 end
 
 local function Sample()
-    -- PEW debounce: drop the sample entirely if we're still inside the
-    -- quest-log hydration window. Avoids false 'true -> false -> true'
-    -- bounces that don't reflect real state changes.
-    if lastPEWAt > 0 and (time() - lastPEWAt) < SAMPLE_DEBOUNCE_AFTER_PEW then
+    -- Read all tracked flags first so we can detect SYNCHRONIZED flips.
+    -- The quest-log cache momentarily reads every completed quest as
+    -- false during a loading screen (mage portal / delve exit), then
+    -- snaps them all back — so 2+ tracked quests flipping in the SAME
+    -- sample is hydration noise, never a real player action (which
+    -- touches one quest at a time). Detect and drop the whole batch.
+    local now = {}
+    local changedCount = 0
+    for _, qid in ipairs(TRACKED_QUEST_IDS) do
+        now[qid] = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
+                   and C_QuestLog.IsQuestFlaggedCompleted(qid) or false
+        local prev = lastState[qid]
+        if prev ~= nil and prev ~= now[qid] then
+            changedCount = changedCount + 1
+        end
+    end
+    if changedCount >= 2 then
+        -- Coherent multi-quest flip = hydration noise. Record the sample
+        -- (with a marker) for forensic visibility but do NOT advance
+        -- lastState or open candidates — let the values snap back on the
+        -- next clean tick without polluting the transition log.
+        PushSample(now, "noise:multiflip")
         return
     end
 
-    local states = {}
+    -- Loading-screen debounce: inside the hydration window after a
+    -- PEW / zone change, still record the raw sample (so a real edge
+    -- isn't invisible) but skip transition promotion — the flag reads
+    -- aren't trustworthy enough to commit as a transition yet.
+    if lastPEWAt > 0 and (time() - lastPEWAt) < SAMPLE_DEBOUNCE_AFTER_PEW then
+        PushSample(now, "debounce:hydration")
+        return
+    end
+
+    local states = now
     for _, qid in ipairs(TRACKED_QUEST_IDS) do
-        local now = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
-                    and C_QuestLog.IsQuestFlaggedCompleted(qid) or false
+        local now = states[qid]
         states[qid] = now
         local prev = lastState[qid]
         if prev == nil then
@@ -318,6 +348,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
         lastPEWAt   = time()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         lastTrigger = "ZONE_CHANGED_NEW_AREA"
+        lastPEWAt   = time()  -- portals fire this too; debounce the hydration bounce
     end
     StartTicker()
     Sample()
