@@ -123,6 +123,12 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.7-beta — Alts panel restyle
+
+**Improvements:**
+- **Alts panel adopts a modern dark "smoke-glass" look** — solid dark backdrop, thin amber accent border, amber title, subtle separators under the title and column header. The background-opacity slider now only affects the pane, so the edges stay crisp at any transparency.
+- **ESC closes the Alts panel**, with a small `esc` hint next to the close button.
+
 ### v0.9.6-beta — Saltheril's Soiree row
 
 **New features:**
