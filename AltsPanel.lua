@@ -453,11 +453,25 @@ local function CreatePanel()
     f.CloseButton.text:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
     f.CloseButton:SetScript("OnEnter", function(self)
         self.text:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
+        f.CloseHint:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
     end)
     f.CloseButton:SetScript("OnLeave", function(self)
         self.text:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
+        f.CloseHint:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
     end)
     f.CloseButton:SetScript("OnClick", function() f:Hide() end)
+
+    -- "esc" hint anchored left of the close button. Dim zinc-500; hover
+    -- on the close button lifts it to amber alongside the X so both
+    -- read as the same close affordance.
+    f.CloseHint = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.CloseHint:SetPoint("RIGHT", f.CloseButton, "LEFT", -2, 0)
+    f.CloseHint:SetText("esc")
+    f.CloseHint:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
+
+    -- Register with UISpecialFrames so WoW closes the panel on ESC.
+    -- The frame must be globally named (it is — BrokerMidnightEventsAltsPanel).
+    tinsert(UISpecialFrames, "BrokerMidnightEventsAltsPanel")
 
     -- Fixed header row above the scrollable content.
     f.header = CreateFrame("Frame", nil, f)
