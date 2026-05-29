@@ -28,6 +28,23 @@ local CHECK = "|A:common-icon-checkmark:14:14|a"
 local CROSS = "|A:common-icon-redx:14:14|a"
 local DASH  = "—"
 
+-- ── Smoke-glass design tokens ────────────────────────────────────────────────
+-- Adopts the visual language of the parent Mythforge web UI:
+-- dark zinc backdrop, amber accent border + title, zinc-tone separators.
+-- 'backdrop-blur' isn't reachable from WoW Lua; we approximate with a
+-- solid dark colour + user-tunable alpha. Border drawn as 4 thin line
+-- textures (top/bottom/left/right) tinted amber-700 at 0.3 alpha.
+local STYLE = {
+    bgR = 0.035, bgG = 0.035, bgB = 0.043,           -- zinc-950 #09090b
+    borderR = 0.71, borderG = 0.33, borderB = 0.04,  -- amber-700 #b45309
+    borderAlpha   = 0.30,                            -- /30
+    titleR = 0.99, titleG = 0.83, titleB = 0.30,     -- amber-300 #fcd34d
+    sepR = 0.16, sepG = 0.16, sepB = 0.17,           -- zinc-800 #27272a
+    headerR = 0.45, headerG = 0.46, headerB = 0.50,  -- zinc-500 #71717a
+    textR = 0.89, textG = 0.89, textB = 0.91,        -- zinc-200 #e4e4e7
+    rowAltAlpha = 0.04,                              -- alternating row tint
+}
+
 -- Private tooltip frame for column-header hover. Same containment rationale
 -- as the main tooltip in Core.lua: this addon reads C_UIWidgetManager
 -- barValue/barMax and does arithmetic on them (taints control flow under
@@ -177,7 +194,7 @@ local function CreateRow(parent)
 
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints()
-    row.bg:SetColorTexture(1, 1, 1, 0.03)
+    row.bg:SetColorTexture(1, 1, 1, STYLE.rowAltAlpha)
     row.bg:Hide()
 
     row.name = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -307,7 +324,7 @@ local function RenderHeader(columns)
             panel.header.cells[i] = cell
         end
         cell.text:SetText(col.short)
-        cell.text:SetTextColor(0.7, 0.85, 0.85)
+        cell.text:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
         cell.fullLabel = col.label ~= col.short and col.label or nil
         cell:Show()
     end
@@ -404,7 +421,50 @@ local function CreatePanel()
     end)
     f:SetScript("OnShow",  function() Render()  end)
 
+    -- ── Smoke-glass restyle ─────────────────────────────────────────────────
+    -- 1. Strip the BasicFrameTemplate's brass nine-slice border. The
+    --    template stores it on f.NineSlice with named children; hiding the
+    --    parent SetAlpha keeps the layout intact but lets our backdrop and
+    --    amber edges read clean.
+    if f.NineSlice then f.NineSlice:SetAlpha(0) end
+    if f.Bg        then f.Bg:SetVertexColor(STYLE.bgR, STYLE.bgG, STYLE.bgB, 1) end
+    if f.TopTileStreaks then f.TopTileStreaks:Hide() end
+
+    -- 2. Solid dark backdrop layered behind the template's title bar.
+    f.smokeBg = f:CreateTexture(nil, "BACKGROUND", nil, -1)
+    f.smokeBg:SetAllPoints(f)
+    f.smokeBg:SetColorTexture(STYLE.bgR, STYLE.bgG, STYLE.bgB, 1)
+
+    -- 3. Four 1px lines tinted amber-700/30 as the new edge.
+    local function edge(parent)
+        local t = parent:CreateTexture(nil, "OVERLAY")
+        t:SetColorTexture(STYLE.borderR, STYLE.borderG, STYLE.borderB,
+                          STYLE.borderAlpha)
+        return t
+    end
+    f.borderT = edge(f); f.borderT:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+                         f.borderT:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+                         f.borderT:SetHeight(1)
+    f.borderB = edge(f); f.borderB:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+                         f.borderB:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+                         f.borderB:SetHeight(1)
+    f.borderL = edge(f); f.borderL:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+                         f.borderL:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+                         f.borderL:SetWidth(1)
+    f.borderR = edge(f); f.borderR:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+                         f.borderR:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+                         f.borderR:SetWidth(1)
+
+    -- 4. Title bar separator — thin zinc-800 line under the title.
+    f.titleSep = edge(f)
+    f.titleSep:SetColorTexture(STYLE.sepR, STYLE.sepG, STYLE.sepB, 1)
+    f.titleSep:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -28)
+    f.titleSep:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -28)
+    f.titleSep:SetHeight(1)
+
+    -- 5. Title text in amber.
     f.TitleText:SetText("Broker_MidnightEvents · Alts")
+    f.TitleText:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
 
     -- Fixed header row above the scrollable content.
     f.header = CreateFrame("Frame", nil, f)
@@ -415,7 +475,14 @@ local function CreatePanel()
     f.header.nameLabel:SetPoint("LEFT", 6, 0)
     f.header.nameLabel:SetWidth(NAME_WIDTH - 12)
     f.header.nameLabel:SetJustifyH("LEFT")
-    f.header.nameLabel:SetTextColor(0.7, 0.85, 0.85)
+    f.header.nameLabel:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
+
+    -- Subtle separator below the header row, matching the title bar one.
+    f.headerSep = f:CreateTexture(nil, "ARTWORK")
+    f.headerSep:SetColorTexture(STYLE.sepR, STYLE.sepG, STYLE.sepB, 1)
+    f.headerSep:SetPoint("TOPLEFT",  f.header, "BOTTOMLEFT",  0, -1)
+    f.headerSep:SetPoint("TOPRIGHT", f.header, "BOTTOMRIGHT", 0, -1)
+    f.headerSep:SetHeight(1)
     f.header.cells = {}
 
     -- Scroll frame for char rows.
