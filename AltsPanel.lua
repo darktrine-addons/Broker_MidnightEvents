@@ -113,33 +113,15 @@ end
 local DEFAULT_BG_ALPHA = 0.6
 
 -- Apply the background opacity from db.altsPanel.bgAlpha to the panel's
--- backing textures. Called at panel creation and again on settings change.
---
--- BasicFrameTemplateWithInset has its dark body backing inside Inset's
--- nine-slice (not a single named .Bg field), so iterate every texture
--- region on both the outer frame and the Inset frame and alpha them.
--- FontStrings + child Frames (scroll content, rows) are unaffected, so
--- text and icons stay fully opaque.
-local function alphaTextures(frame, alpha)
-    if not frame then return end
-    for _, region in ipairs({ frame:GetRegions() }) do
-        if region.IsObjectType and region:IsObjectType("Texture") then
-            region:SetAlpha(alpha)
-        end
-    end
-end
-
+-- main backdrop only. The amber border + zinc separators keep their
+-- intrinsic alpha so the panel's frame stays legible regardless of how
+-- transparent the backdrop is set — matches a real smoke-glass look
+-- (the pane goes translucent, the bezel/edges stay defined).
 local function ApplyBackgroundAlpha(f)
     if not f then return end
     local alpha = (ns.db and ns.db.altsPanel and ns.db.altsPanel.bgAlpha)
                   or DEFAULT_BG_ALPHA
-    alphaTextures(f, alpha)
-    alphaTextures(f.Inset, alpha)
-    -- NineSlice mixin (used by Inset) keeps its border art on a child frame
-    -- named NineSlice; iterate it too so the body really lets the world
-    -- behind show through.
-    if f.NineSlice       then alphaTextures(f.NineSlice, alpha)       end
-    if f.Inset and f.Inset.NineSlice then alphaTextures(f.Inset.NineSlice, alpha) end
+    if f.Bg then f.Bg:SetAlpha(alpha) end
 end
 
 function ns.AltsPanel.RefreshBackground()
@@ -401,11 +383,11 @@ end
 -- ── Frame creation ────────────────────────────────────────────────────────────
 
 local function CreatePanel()
-    local f = CreateFrame("Frame", "BrokerMidnightEventsAltsPanel",
-                          UIParent, "BasicFrameTemplateWithInset")
-    -- Width is set/refreshed each Render() based on column count; pick an
-    -- initial sane size so the frame has a footprint before the first
-    -- render computes the real width.
+    -- Smoke-glass panel built from scratch — no Blizzard frame template.
+    -- The previous BasicFrameTemplateWithInset attempt couldn't cleanly
+    -- erase the template's child Inset frame's chrome, so we own every
+    -- pixel here and lay it out exactly per Mythforge's design language.
+    local f = CreateFrame("Frame", "BrokerMidnightEventsAltsPanel", UIParent)
     f:SetSize(ComputeFrameWidth(#GetColumns()), FRAME_HEIGHT)
     f:SetFrameStrata("HIGH")
     f:SetMovable(true)
@@ -419,25 +401,16 @@ local function CreatePanel()
         self:StopMovingOrSizing()
         PersistGeometry()
     end)
-    f:SetScript("OnShow",  function() Render()  end)
+    f:SetScript("OnShow", function() Render() end)
 
-    -- ── Smoke-glass restyle ─────────────────────────────────────────────────
-    -- 1. Strip the BasicFrameTemplate's brass nine-slice border. The
-    --    template stores it on f.NineSlice with named children; hiding the
-    --    parent SetAlpha keeps the layout intact but lets our backdrop and
-    --    amber edges read clean.
-    if f.NineSlice then f.NineSlice:SetAlpha(0) end
-    if f.Bg        then f.Bg:SetVertexColor(STYLE.bgR, STYLE.bgG, STYLE.bgB, 1) end
-    if f.TopTileStreaks then f.TopTileStreaks:Hide() end
+    -- Solid dark backdrop, full panel.
+    f.Bg = f:CreateTexture(nil, "BACKGROUND")
+    f.Bg:SetAllPoints(f)
+    f.Bg:SetColorTexture(STYLE.bgR, STYLE.bgG, STYLE.bgB, 1)
 
-    -- 2. Solid dark backdrop layered behind the template's title bar.
-    f.smokeBg = f:CreateTexture(nil, "BACKGROUND", nil, -1)
-    f.smokeBg:SetAllPoints(f)
-    f.smokeBg:SetColorTexture(STYLE.bgR, STYLE.bgG, STYLE.bgB, 1)
-
-    -- 3. Four 1px lines tinted amber-700/30 as the new edge.
+    -- Four 1px amber lines forming the edge.
     local function edge(parent)
-        local t = parent:CreateTexture(nil, "OVERLAY")
+        local t = parent:CreateTexture(nil, "BORDER")
         t:SetColorTexture(STYLE.borderR, STYLE.borderG, STYLE.borderB,
                           STYLE.borderAlpha)
         return t
@@ -455,16 +428,36 @@ local function CreatePanel()
                          f.borderR:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
                          f.borderR:SetWidth(1)
 
-    -- 4. Title bar separator — thin zinc-800 line under the title.
-    f.titleSep = edge(f)
+    -- Title text — amber, anchored at top center.
+    f.TitleText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.TitleText:SetPoint("TOP", f, "TOP", 0, -8)
+    f.TitleText:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
+    f.TitleText:SetText("Broker_MidnightEvents · Alts")
+
+    -- Title bar separator — thin zinc line under the title (≈28px down).
+    f.titleSep = f:CreateTexture(nil, "ARTWORK")
     f.titleSep:SetColorTexture(STYLE.sepR, STYLE.sepG, STYLE.sepB, 1)
     f.titleSep:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -28)
     f.titleSep:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -28)
     f.titleSep:SetHeight(1)
 
-    -- 5. Title text in amber.
-    f.TitleText:SetText("Broker_MidnightEvents · Alts")
-    f.TitleText:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
+    -- Close button — minimal X glyph in the top-right corner, no Blizzard
+    -- chrome. Hover state brightens the X to amber.
+    f.CloseButton = CreateFrame("Button", nil, f)
+    f.CloseButton:SetSize(22, 22)
+    f.CloseButton:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -4)
+    f.CloseButton.text = f.CloseButton:CreateFontString(nil, "OVERLAY",
+                                                       "GameFontNormalLarge")
+    f.CloseButton.text:SetAllPoints(f.CloseButton)
+    f.CloseButton.text:SetText("×")
+    f.CloseButton.text:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
+    f.CloseButton:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(STYLE.titleR, STYLE.titleG, STYLE.titleB)
+    end)
+    f.CloseButton:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(STYLE.headerR, STYLE.headerG, STYLE.headerB)
+    end)
+    f.CloseButton:SetScript("OnClick", function() f:Hide() end)
 
     -- Fixed header row above the scrollable content.
     f.header = CreateFrame("Frame", nil, f)
