@@ -65,9 +65,14 @@ local DISCOVERY_PATTERNS = {
         "Talenia Flamesong",
     },
 }
-local SAMPLE_INTERVAL   = 60   -- seconds; cheap call, no zone gate
+-- Sampling cadence. Temporarily fast (15s) while hunting the Delver's
+-- Bounty 91190 lifecycle — the suspected loot→consume sequence can flip
+-- the flag false→true→false within a couple of minutes, which the old
+-- 60s + 2-sample-confirmation cadence could miss entirely. Restore to
+-- 60 / 2 once the possession-vs-completion model is confirmed.
+local SAMPLE_INTERVAL   = 15   -- seconds; cheap call, no zone gate
 local TRANSITION_RING   = 200  -- per-char ring; bounded so always-on sampling can't bloat SV
-local SAMPLE_RING       = 300  -- per-char sample ring; ~5h of 60s sampling
+local SAMPLE_RING       = 300  -- per-char sample ring; ~75min at 15s cadence
 
 local function CharKey()
     return (GetRealmName() or "?") .. "/" .. (UnitName("player") or "?")
@@ -114,7 +119,12 @@ local lastState = {}
 -- candidate and require it to persist for N consecutive samples before
 -- promoting to a real transition. Resets if the value reverts before
 -- the threshold.
-local CONFIRMATION_SAMPLES = 2  -- count AFTER the first observation
+-- Temporarily 1 (immediate) while hunting 91190's fast loot→consume
+-- edges — a 2-sample requirement at 15s would still need the state to
+-- hold 30s, risking a miss on a quick consume. The PEW debounce below
+-- still filters the worst hydration-window noise on its own. Restore
+-- to 2 alongside SAMPLE_INTERVAL once the model is confirmed.
+local CONFIRMATION_SAMPLES = 1  -- count AFTER the first observation
 local candidate = {}            -- qid → { newState, samplesSeen, firstSeenAt, firstTrigger }
 
 -- PEW debounce: ignore samples for SAMPLE_DEBOUNCE_AFTER_PEW seconds
@@ -181,32 +191,35 @@ local function Sample()
             candidate[qid] = nil
         elseif prev ~= now then
             -- Disagreement with established state. Open or extend the
-            -- candidate flip; only promote to a recorded transition once
-            -- the new value has held for CONFIRMATION_SAMPLES ticks.
+            -- candidate flip; promote to a recorded transition once the
+            -- new value has been seen for CONFIRMATION_SAMPLES samples.
+            -- samplesSeen counts the CURRENT sample, so CONFIRMATION_SAMPLES
+            -- = 1 fires immediately on first observation; = 2 needs one
+            -- confirming follow-up; etc. The threshold is checked in one
+            -- place after (re)establishing the candidate so the meaning of
+            -- the constant is consistent regardless of branch.
             local c = candidate[qid]
             if c and c.newState == now then
                 c.samplesSeen = c.samplesSeen + 1
-                if c.samplesSeen >= CONFIRMATION_SAMPLES then
-                    -- Attribute to the trigger active at the moment the
-                    -- new value was FIRST observed — that's the moment
-                    -- the player did the thing that flipped the flag,
-                    -- not the later confirming sample.
-                    local savedTrigger = lastTrigger
-                    lastTrigger = c.firstTrigger or lastTrigger
-                    PushTransition(qid, prev, now)
-                    lastTrigger = savedTrigger
-                    lastState[qid] = now
-                    candidate[qid] = nil
-                end
             else
-                -- New candidate (or contradicts a prior one going the
-                -- opposite direction — restart).
-                candidate[qid] = {
+                c = {
                     newState     = now,
                     samplesSeen  = 1,
                     firstSeenAt  = time(),
                     firstTrigger = lastTrigger,
                 }
+                candidate[qid] = c
+            end
+            if c.samplesSeen >= CONFIRMATION_SAMPLES then
+                -- Attribute to the trigger active when the new value was
+                -- FIRST observed — the moment the player did the thing
+                -- that flipped the flag, not a later confirming sample.
+                local savedTrigger = lastTrigger
+                lastTrigger = c.firstTrigger or lastTrigger
+                PushTransition(qid, prev, now)
+                lastTrigger = savedTrigger
+                lastState[qid] = now
+                candidate[qid] = nil
             end
         else
             -- Value reverted to lastState before confirmation: drop the
