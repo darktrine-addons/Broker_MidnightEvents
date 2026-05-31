@@ -385,3 +385,105 @@ SlashCmdList.BMEBEACON = function(msg)
         "  transitions=%d  samples=%d  (SV: Broker_MidnightEventsBeacon)",
         b.transitionCursor, b.sampleCursor))
 end
+
+-- ── Crest-weekly signal probe ────────────────────────────────────────────────
+-- /mecrest — hunt for the signal behind "loot 20 mythic crests from
+-- bountiful delves per week". Three angles, printed to chat AND saved
+-- to Broker_MidnightEventsBeacon.crestProbe:
+--   1. Quest log scan — every quest (incl. tracked/hidden where the API
+--      exposes them) whose title or any objective text mentions "crest",
+--      plus any objective with numRequired >= 10 (catches an "x/20"
+--      counter that doesn't spell out the word). The crest weekly, if
+--      it's a quest, will surface here.
+--   2. Currency scan — every currency whose name contains "crest", with
+--      its weekly-earned / weekly-cap fields (quantityEarnedThisWeek,
+--      maxWeeklyQuantity). If the weekly is currency-tracked rather than
+--      quest-tracked, the delta lives here.
+--   3. Context — instanceType so we know whether the probe was run
+--      inside a delve (scenario) when the crests were fresh.
+-- Run right after looting a bountiful-delve coffer for the cleanest read.
+local function ScanCrestQuests()
+    local out = {}
+    if not (C_QuestLog and C_QuestLog.GetNumQuestLogEntries) then return out end
+    local n = C_QuestLog.GetNumQuestLogEntries()
+    for i = 1, n do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and info.questID then
+            local title = C_QuestLog.GetTitleForQuestID
+                          and C_QuestLog.GetTitleForQuestID(info.questID)
+            local objs  = C_QuestLog.GetQuestObjectives
+                          and C_QuestLog.GetQuestObjectives(info.questID) or {}
+            local hit, why = false, nil
+            if title and title:lower():find("crest") then hit, why = true, "title" end
+            for _, o in ipairs(objs) do
+                if o.text and o.text:lower():find("crest") then hit, why = true, "objtext" end
+                if o.numRequired and o.numRequired >= 10 then
+                    hit = true; why = why or ("numReq=" .. o.numRequired)
+                end
+            end
+            if hit then
+                local first = objs[1] or {}
+                out[#out + 1] = {
+                    questID  = info.questID,
+                    title    = title or "?",
+                    why      = why,
+                    fulfilled = first.numFulfilled,
+                    required  = first.numRequired,
+                    objText   = first.text,
+                }
+            end
+        end
+    end
+    return out
+end
+
+local function ScanCrestCurrencies()
+    local out = {}
+    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize) then return out end
+    local size = C_CurrencyInfo.GetCurrencyListSize() or 0
+    for i = 1, size do
+        local info = C_CurrencyInfo.GetCurrencyListInfo
+                     and C_CurrencyInfo.GetCurrencyListInfo(i)
+        if info and not info.isHeader and info.name
+           and info.name:lower():find("crest") then
+            out[#out + 1] = {
+                name              = info.name,
+                quantity          = info.quantity,
+                earnedThisWeek    = info.quantityEarnedThisWeek,
+                maxWeekly         = info.maxWeeklyQuantity,
+            }
+        end
+    end
+    return out
+end
+
+SLASH_BMECREST1 = "/mecrest"
+SlashCmdList.BMECREST = function()
+    local quests     = ScanCrestQuests()
+    local currencies = ScanCrestCurrencies()
+    local _, itype   = IsInInstance()
+
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    Broker_MidnightEventsBeacon.crestProbe = {
+        t            = time(),
+        char         = CharKey(),
+        instanceType = itype,
+        quests       = quests,
+        currencies   = currencies,
+    }
+
+    print(string.format(
+        "|cffffcc00MidnightEvents/Crest|r probe — %s, instance=%s, quests=%d currencies=%d",
+        CharKey(), tostring(itype), #quests, #currencies))
+    for _, q in ipairs(quests) do
+        print(string.format("  quest %d  %q  [%s]  %s/%s  obj=%q",
+            q.questID, q.title, tostring(q.why),
+            tostring(q.fulfilled), tostring(q.required), tostring(q.objText)))
+    end
+    for _, c in ipairs(currencies) do
+        print(string.format("  currency %q  have=%s  thisWeek=%s/%s",
+            c.name, tostring(c.quantity),
+            tostring(c.earnedThisWeek), tostring(c.maxWeekly)))
+    end
+    print("|cffffcc00  saved to|r Broker_MidnightEventsBeacon.crestProbe (run /reload to flush)")
+end
