@@ -1158,11 +1158,14 @@ local function BuildTooltip()
     if SectionEnabled("weekly") and (showWB or hasWeeklies) then
         local CHECK = "|A:common-icon-checkmark:14:14|a"
         local CROSS = "|A:common-icon-redx:14:14|a"
-        -- In-progress marker: a yellow half-filled circle. Distinct from
-        -- the red ✗ (not started) and green ✓ (done) so partially-complete
-        -- weeklies (a Prey tier under way, a multi-step quest mid-objective)
-        -- read at a glance. ◐ renders from the client's font fallback.
-        local INPROGRESS = "|cfff5d142◐|r"
+        -- In-progress marker: the classic yellow status dot
+        -- (Interface\COMMON\Indicator-Yellow — a real texture since vanilla,
+        -- renders everywhere, unlike the ◐ glyph which the addon font lacks).
+        -- Reads as the "in between" state next to the green ✓ and red ✗ for
+        -- partially-complete weeklies. The actual fractional progress is
+        -- already shown in the row labels (Prey tier counts, "x/3" objective),
+        -- so this value-column marker is purely symbolic.
+        local INPROGRESS = "|TInterface\\COMMON\\Indicator-Yellow:14:14|t"
 
         local wb = ns.char and ns.char.worldBoss or {}
         local weeklyState = ns.char and ns.char.weeklies or {}
