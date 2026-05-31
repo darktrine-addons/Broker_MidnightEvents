@@ -144,22 +144,81 @@ local lastPEWAt = 0
 -- the trigger candidate. Falls back to "ticker" for unattributed flips.
 local lastTrigger = "ticker"
 
+-- ── Beacon / Bounty item-use correlation ─────────────────────────────────────
+-- Hypothesis test for the possession model: a 91190 false→true edge
+-- should coincide (within ITEM_GRACE_WINDOW) with the player USING a
+-- Beacon of Hope (item count drops by 1 → summons Nullaeus mid-delve)
+-- or, for the consume edge, a Delver's Bounty. If a 91190 edge lands
+-- with NO nearby item-count decrement, the model is incomplete —
+-- something else is flipping the flag.
+--
+-- Item IDs from the prior harvest (memory: beacon-of-hope-untrackable);
+-- VERIFY in-game if the correlation never fires — patch may have shifted
+-- them. GetItemCount is cheap; polled on BAG_UPDATE (debounced).
+local TRACKED_ITEMS = {
+    [253342] = "Beacon of Hope",
+    [233071] = "Delver's Bounty",
+}
+local ITEM_GRACE_WINDOW = 60     -- seconds: how near an item use must be to a 91190 edge
+local itemCountPrev     = {}     -- itemID → last observed count (nil until first poll)
+local recentItemUses    = {}     -- ring of { t, itemID, name, from, to } (decrements only)
+local RECENT_ITEM_RING  = 40
+
+local function PushItemUse(rec)
+    recentItemUses[#recentItemUses + 1] = rec
+    if #recentItemUses > RECENT_ITEM_RING then
+        table.remove(recentItemUses, 1)
+    end
+end
+
+-- Return the item-use records within ITEM_GRACE_WINDOW of `whenT`.
+local function ItemUsesNear(whenT)
+    local out = {}
+    for _, u in ipairs(recentItemUses) do
+        if math.abs(whenT - u.t) <= ITEM_GRACE_WINDOW then
+            out[#out + 1] = u
+        end
+    end
+    return out
+end
+
 local function PushTransition(questID, fromState, toState)
     local b = Bucket()
     b.transitionCursor = b.transitionCursor + 1
     if b.transitionCursor > TRANSITION_RING then b.transitionCursor = 1 end
+    -- Correlate 91190 edges with recent Beacon / Bounty uses.
+    local itemContext, itemSummary = nil, nil
+    if questID == 91190 then
+        local nearby = ItemUsesNear(time())
+        itemContext = nearby
+        if #nearby > 0 then
+            local parts = {}
+            for _, u in ipairs(nearby) do
+                parts[#parts + 1] = string.format("%s %d→%d (%+ds)",
+                    u.name, u.from, u.to, u.t - time())
+            end
+            itemSummary = table.concat(parts, ", ")
+        else
+            itemSummary = "NO beacon/bounty use within "
+                          .. ITEM_GRACE_WINDOW .. "s — UNEXPLAINED"
+        end
+    end
     b.transitions[b.transitionCursor] = {
-        t        = time(),
-        questID  = questID,
-        from     = fromState,
-        to       = toState,
-        trigger  = lastTrigger,
-        ctx      = InstanceContext(),
+        t           = time(),
+        questID     = questID,
+        from        = fromState,
+        to          = toState,
+        trigger     = lastTrigger,
+        itemContext = itemContext,
+        ctx         = InstanceContext(),
     }
     print(string.format(
         "|cffffcc00MidnightEvents/BeaconHarvest|r quest %d: %s → %s [%s] (%s)",
         questID, tostring(fromState), tostring(toState),
         lastTrigger, InstanceContext().name or "?"))
+    if itemSummary then
+        print("|cffffcc00MidnightEvents/Beacon|r   ↳ item: " .. itemSummary)
+    end
 end
 
 local function PushSample(states, note)
@@ -269,6 +328,55 @@ local function StartTicker()
     if not C_Timer or not C_Timer.NewTicker then return end
     ticker = C_Timer.NewTicker(SAMPLE_INTERVAL, Sample)
 end
+
+-- Poll tracked item counts; record DECREMENTS (item used) into
+-- recentItemUses so PushTransition can correlate them with 91190 edges.
+-- Increments (looted / received an item) are seeded silently — we only
+-- care about uses for the "did using a Beacon flip the flag" test, but
+-- we still update the baseline so a later decrement reports the right
+-- from/to. Also persists a per-char rolling SV ring for post-hoc.
+local function PollItems(trigger)
+    if not (C_Item and C_Item.GetItemCount or GetItemCount) then return end
+    local getCount = (C_Item and C_Item.GetItemCount) or GetItemCount
+    for itemID, name in pairs(TRACKED_ITEMS) do
+        local count = getCount(itemID) or 0
+        local prev  = itemCountPrev[itemID]
+        if prev ~= nil and count < prev then
+            local rec = {
+                t = time(), itemID = itemID, name = name,
+                from = prev, to = count, trigger = trigger,
+                ctx = InstanceContext(),
+            }
+            PushItemUse(rec)
+            -- Persist to SV ring for post-hoc.
+            local b = Bucket()
+            b.itemUses = b.itemUses or { ring = {}, cursor = 0 }
+            b.itemUses.cursor = b.itemUses.cursor + 1
+            if b.itemUses.cursor > 60 then b.itemUses.cursor = 1 end
+            b.itemUses.ring[b.itemUses.cursor] = rec
+            print(string.format(
+                "|cffffcc00MidnightEvents/Beacon|r used %s: %d → %d (%s)",
+                name, prev, count, InstanceContext().name or "?"))
+        end
+        itemCountPrev[itemID] = count
+    end
+end
+
+-- BAG_UPDATE fires in bursts; debounce the poll.
+local lastItemPollAt = 0
+local itemFrame = CreateFrame("Frame")
+itemFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+itemFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+itemFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_ENTERING_WORLD" then
+        -- Seed baseline so the first real BAG_UPDATE doesn't misreport.
+        PollItems("PEW-seed")
+        return
+    end
+    if (time() - lastItemPollAt) < 1 then return end
+    lastItemPollAt = time()
+    PollItems("BAG_UPDATE")
+end)
 
 -- Saltheril's Soiree discovery logger. On QUEST_ACCEPTED, if the new
 -- quest's title or giver matches the Soiree DISCOVERY_PATTERNS, push
