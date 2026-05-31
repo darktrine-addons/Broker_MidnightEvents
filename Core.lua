@@ -452,6 +452,41 @@ local function IsWeeklyReadyForTurnIn(w)
     return false
 end
 
+-- A weekly is "in progress" when it's not done but has partial progress
+-- worth signalling (a yellow ◐ instead of the red ✗ in the value column).
+-- Sources, in order:
+--   * customInProgress() hook — counter rows (Prey Hunts) compute their
+--     own partial state from cached counts.
+--   * single-questID rows — the quest is in the active log with a partly-
+--     filled first objective (numFulfilled between 1 and numRequired-1).
+--   * picks rows — the picked quest is in the log with partial objectives.
+-- Returns false for not-started (quest absent → GetQuestObjectives nil)
+-- and for done rows (callers check done first).
+local function IsWeeklyInProgress(w)
+    if w.customInProgress then
+        local ok, v = pcall(w.customInProgress)
+        return ok and v or false
+    end
+    local function partial(qid)
+        if not (qid and C_QuestLog and C_QuestLog.GetQuestObjectives) then
+            return false
+        end
+        local objs = C_QuestLog.GetQuestObjectives(qid)
+        local o = objs and objs[1]
+        if o and o.numRequired and o.numRequired > 1
+           and (o.numFulfilled or 0) > 0
+           and o.numFulfilled < o.numRequired then
+            return true
+        end
+        return false
+    end
+    if w.questID then return partial(w.questID) end
+    if w.picks and ns.char and ns.char.picks then
+        return partial(ns.char.picks[w.key])
+    end
+    return false
+end
+
 -- Detect which pool member the current char has accepted (or completed)
 -- this week for every ns.weeklies entry with a `picks` map. Stored on
 -- ns.char.picks[<key>] = questID; the tooltip then looks up
@@ -1123,6 +1158,11 @@ local function BuildTooltip()
     if SectionEnabled("weekly") and (showWB or hasWeeklies) then
         local CHECK = "|A:common-icon-checkmark:14:14|a"
         local CROSS = "|A:common-icon-redx:14:14|a"
+        -- In-progress marker: a yellow half-filled circle. Distinct from
+        -- the red ✗ (not started) and green ✓ (done) so partially-complete
+        -- weeklies (a Prey tier under way, a multi-step quest mid-objective)
+        -- read at a glance. ◐ renders from the client's font fallback.
+        local INPROGRESS = "|cfff5d142◐|r"
 
         local wb = ns.char and ns.char.worldBoss or {}
         local weeklyState = ns.char and ns.char.weeklies or {}
@@ -1205,8 +1245,13 @@ local function BuildTooltip()
                     -- in warm gold inside the same grey parens. If the
                     -- quest isn't in the active log we display 0/N — the
                     -- honest "haven't picked it up yet" signal.
+                    -- Suppress the live count once the weekly is done: the
+                    -- quest leaves the log on completion, so GetQuestObjectives
+                    -- reads 0 — showing "(Prey Hunts, 0/3)" on a completed row
+                    -- is a lie. The ✓ already says "done"; just show the hint.
                     local seg = DIM_OPEN .. "(" .. w.hint
                     if w.objectiveRequired and w.questID
+                       and not weeklyState[w.key]
                        and C_QuestLog and C_QuestLog.GetQuestObjectives then
                         local fulfilled = 0
                         local objs = C_QuestLog.GetQuestObjectives(w.questID)
@@ -1256,6 +1301,7 @@ local function BuildTooltip()
                     label          = rowLabel,
                     done           = weeklyState[w.key] or false,
                     readyForTurnIn = IsWeeklyReadyForTurnIn(w),
+                    inProgress     = IsWeeklyInProgress(w),
                 }
               end  -- if not w.hideInTooltip and not levelGated
             end
@@ -1353,6 +1399,12 @@ local function BuildTooltip()
                 labelR, labelG, labelB = CV_r, CV_g, CV_b
                 valueText = "available"
                 vR, vG, vB = 0.30, 0.85, 0.30
+            elseif r.inProgress then
+                -- Partially complete: white label, yellow ◐. A step above
+                -- "not started" — the player has begun but isn't done.
+                labelR, labelG, labelB = CV_r, CV_g, CV_b
+                valueText = INPROGRESS
+                vR, vG, vB = CV_r, CV_g, CV_b
             else
                 -- Weekly outstanding: white label, orange ✗.
                 labelR, labelG, labelB = CV_r, CV_g, CV_b

@@ -219,6 +219,19 @@ ns.weeklies = {
           if total > unlockMax then total = unlockMax end
           return total >= unlockMax
       end,
+      -- In progress = at least one hunt done but not yet at the unlock cap.
+      customInProgress = function()
+          if not (ns.preyQuests and C_QuestLog
+                  and C_QuestLog.IsQuestFlaggedCompleted) then return false end
+          local pH = ns.char and ns.char.preyHunts
+          local unlockMax = (pH and pH.max) or 12
+          local total = 0
+          for qid in pairs(ns.preyQuests) do
+              if C_QuestLog.IsQuestFlaggedCompleted(qid) then total = total + 1 end
+          end
+          if total > unlockMax then total = unlockMax end
+          return total > 0 and total < unlockMax
+      end,
       customLabel = function(rowLabel)
           if not (ns.preyQuests and C_QuestLog
                   and C_QuestLog.IsQuestFlaggedCompleted) then return rowLabel end
