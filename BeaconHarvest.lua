@@ -363,8 +363,11 @@ SlashCmdList.BMEBEACON = function(msg)
         Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
         Broker_MidnightEventsBeacon.byChar = Broker_MidnightEventsBeacon.byChar or {}
         Broker_MidnightEventsBeacon.byChar[CharKey()] = nil
+        if Broker_MidnightEventsBeacon.crestLog then
+            Broker_MidnightEventsBeacon.crestLog[CharKey()] = nil
+        end
         lastState = {}
-        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data.")
+        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data (incl. crest log).")
         return
     end
     Sample()  -- force one sample now, even outside delve
@@ -487,3 +490,159 @@ SlashCmdList.BMECREST = function()
     end
     print("|cffffcc00  saved to|r Broker_MidnightEventsBeacon.crestProbe (run /reload to flush)")
 end
+
+-- ── Live crest-loot correlation (dev) ────────────────────────────────────────
+-- Detects mythic-crest gains from delve coffers in real time and pairs
+-- them with quest-objective increments that land in the same window, so
+-- we can see WHICH quest tracks the 20-crests weekly (if any) without
+-- guessing. Two SV rings under Broker_MidnightEventsBeacon.crestLog[char]:
+--   crests   — every crest-currency GAIN while in a delve (scenario):
+--              { t, currencyID, name, delta, gainSource, mapID }
+--   questIncr — every quest-objective increment while in a delve:
+--              { t, questID, title, from, to }
+-- Both are timestamped; cross-correlation = find the questIncr whose
+-- t is adjacent to a crest gain and whose delta matches. Echoed live to
+-- chat so the adjacency is visible as it happens (quest increments only
+-- echo within CREST_ECHO_WINDOW of a crest gain to keep chat focused;
+-- the SV ring keeps everything for post-hoc).
+--
+-- Gated to scenario (delve) instanceType so raid / dungeon crest gains
+-- are excluded by construction — the exact "don't count other sources"
+-- requirement.
+local CREST_CRESTS_RING  = 100   -- crest gains are rare; won't be evicted by quest spam
+local CREST_QINCR_RING   = 300
+local CREST_ECHO_WINDOW  = 12    -- seconds; echo quest increments this long after a crest gain
+local crestSnapshot      = nil   -- questID -> { sum, title }; nil until first walk
+local lastCrestGainAt    = 0
+local lastQincrWalkAt    = 0
+
+local function CrestInScenario()
+    local _, itype = IsInInstance()
+    return itype == "scenario"
+end
+
+local function CrestLogBucket(field, ringCap)
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    local root = Broker_MidnightEventsBeacon
+    root.crestLog = root.crestLog or {}
+    local key = CharKey()
+    local cl = root.crestLog[key]
+    if not cl then cl = {}; root.crestLog[key] = cl end
+    cl[field] = cl[field] or { ring = {}, cursor = 0, cap = ringCap }
+    return cl[field]
+end
+
+local function CrestPush(field, ringCap, rec)
+    local b = CrestLogBucket(field, ringCap)
+    b.cursor = b.cursor + 1
+    if b.cursor > b.cap then b.cursor = 1 end
+    b.ring[b.cursor] = rec
+end
+
+-- Walk quest objectives, summing numFulfilled per quest. Returns the
+-- snapshot table { questID -> { sum, title } }.
+local function CrestWalkQuests()
+    local snap = {}
+    if not (C_QuestLog and C_QuestLog.GetNumQuestLogEntries) then return snap end
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and info.questID then
+            local objs = C_QuestLog.GetQuestObjectives
+                         and C_QuestLog.GetQuestObjectives(info.questID) or {}
+            local sum = 0
+            for _, o in ipairs(objs) do sum = sum + (o.numFulfilled or 0) end
+            snap[info.questID] = {
+                sum   = sum,
+                title = C_QuestLog.GetTitleForQuestID
+                        and C_QuestLog.GetTitleForQuestID(info.questID),
+            }
+        end
+    end
+    return snap
+end
+
+-- Diff against crestSnapshot, return list of increments, update snapshot.
+local function CrestDiffQuests()
+    local now = CrestWalkQuests()
+    local incr = {}
+    if crestSnapshot then
+        for qid, cur in pairs(now) do
+            local prev = crestSnapshot[qid]
+            local from = prev and prev.sum or 0
+            if cur.sum > from then
+                incr[#incr + 1] = {
+                    questID = qid, title = cur.title, from = from, to = cur.sum,
+                }
+            end
+        end
+    end
+    crestSnapshot = now
+    return incr
+end
+
+local function IsCrestCurrency(currencyID)
+    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo) then return nil end
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    if info and info.name and info.name:lower():find("crest") then
+        return info.name
+    end
+    return nil
+end
+
+local cf = CreateFrame("Frame")
+cf:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+cf:RegisterEvent("QUEST_LOG_UPDATE")
+cf:SetScript("OnEvent", function(_, event, ...)
+    if event == "CURRENCY_DISPLAY_UPDATE" then
+        if not CrestInScenario() then return end
+        local currencyID, _, quantityChange, gainSource = ...
+        if not currencyID or (quantityChange or 0) <= 0 then return end
+        local name = IsCrestCurrency(currencyID)
+        if not name then return end
+        lastCrestGainAt = time()
+        CrestPush("crests", CREST_CRESTS_RING, {
+            t          = lastCrestGainAt,
+            currencyID = currencyID,
+            name       = name,
+            delta      = quantityChange,
+            gainSource = gainSource,
+            mapID      = C_Map and C_Map.GetBestMapForUnit
+                         and C_Map.GetBestMapForUnit("player") or nil,
+        })
+        print(string.format(
+            "|cffffcc00MidnightEvents/Crest|r +%d %s [gainSource=%s] (delve)",
+            quantityChange, name, tostring(gainSource)))
+        -- Sweep for a quest increment that landed just before this gain.
+        local incr = CrestDiffQuests()
+        for _, q in ipairs(incr) do
+            CrestPush("questIncr", CREST_QINCR_RING, {
+                t = lastCrestGainAt, questID = q.questID,
+                title = q.title, from = q.from, to = q.to,
+            })
+            print(string.format(
+                "|cffffcc00MidnightEvents/Crest|r   ↳ quest %d %q  %d→%d",
+                q.questID, tostring(q.title), q.from, q.to))
+        end
+    elseif event == "QUEST_LOG_UPDATE" then
+        -- Debounce: QUEST_LOG_UPDATE fires in bursts.
+        if (time() - lastQincrWalkAt) < 1 then
+            -- still refresh snapshot occasionally so baseline doesn't drift,
+            -- but skip the heavy per-increment logging within the debounce.
+        end
+        lastQincrWalkAt = time()
+        local incr = CrestDiffQuests()
+        if not CrestInScenario() then return end  -- snapshot stays fresh; don't log outside delves
+        local within = (time() - lastCrestGainAt) <= CREST_ECHO_WINDOW
+        for _, q in ipairs(incr) do
+            CrestPush("questIncr", CREST_QINCR_RING, {
+                t = time(), questID = q.questID,
+                title = q.title, from = q.from, to = q.to,
+            })
+            if within then
+                print(string.format(
+                    "|cffffcc00MidnightEvents/Crest|r quest %d %q  %d→%d (near crest)",
+                    q.questID, tostring(q.title), q.from, q.to))
+            end
+        end
+    end
+end)
