@@ -186,11 +186,23 @@ local function PushTransition(questID, fromState, toState)
     local b = Bucket()
     b.transitionCursor = b.transitionCursor + 1
     if b.transitionCursor > TRANSITION_RING then b.transitionCursor = 1 end
-    -- Correlate 91190 edges with recent Beacon / Bounty uses.
-    local itemContext, itemSummary = nil, nil
+    -- Correlate 91190 edges with recent Beacon / Bounty uses AND snapshot
+    -- the live item counts at the edge. The counts discriminate the user's
+    -- "pre-condition flag" hypothesis: if 91190 flips while holding 0
+    -- Beacons and 0 Bounties, the flag can't be beacon/bounty-driven —
+    -- it's tracking something else (e.g. just being inside an active
+    -- bountiful-delve instance: waystone-discovered → instance-closed).
+    local itemContext, itemSummary, itemCounts = nil, nil, nil
     if questID == 91190 then
         local nearby = ItemUsesNear(time())
         itemContext = nearby
+        local getCount = (C_Item and C_Item.GetItemCount) or GetItemCount
+        if getCount then
+            itemCounts = {}
+            for itemID, name in pairs(TRACKED_ITEMS) do
+                itemCounts[name] = getCount(itemID) or 0
+            end
+        end
         if #nearby > 0 then
             local parts = {}
             for _, u in ipairs(nearby) do
@@ -200,7 +212,14 @@ local function PushTransition(questID, fromState, toState)
             itemSummary = table.concat(parts, ", ")
         else
             itemSummary = "NO beacon/bounty use within "
-                          .. ITEM_GRACE_WINDOW .. "s — UNEXPLAINED"
+                          .. ITEM_GRACE_WINDOW .. "s"
+            if itemCounts then
+                itemSummary = itemSummary .. string.format(
+                    " | held: Beacon=%d Bounty=%d",
+                    itemCounts["Beacon of Hope"] or 0,
+                    itemCounts["Delver's Bounty"] or 0)
+            end
+            itemSummary = itemSummary .. " — UNEXPLAINED"
         end
     end
     b.transitions[b.transitionCursor] = {
@@ -210,6 +229,7 @@ local function PushTransition(questID, fromState, toState)
         to          = toState,
         trigger     = lastTrigger,
         itemContext = itemContext,
+        itemCounts  = itemCounts,
         ctx         = InstanceContext(),
     }
     print(string.format(
