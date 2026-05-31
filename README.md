@@ -2,9 +2,11 @@
 
 > 🚧 **Beta in active development.** All listed features work and the addon is daily-driver stable across multiple characters, but the surface is still evolving — expect occasional polish-level changes between releases. Feedback, bug reports, and feature ideas welcome on the [issue tracker](https://github.com/darktrine-addons/Broker_MidnightEvents/issues).
 
-**A compact world-event timer + associated mini weekly checklist for WoW Midnight, served through any LibDataBroker host.**
+**A compact world-event timer + per-character weekly checklist for WoW Midnight, served through any LibDataBroker host.**
 
-The broker bar always shows the most-urgent event — a wave countdown, a "FIRING NOW!" for the Void Incursion, a Skinning Den firing in 12 minutes. Hover the bar (or open the minimap button) and a structured tooltip unfolds: what's happening right now, what's coming in the next 24 hours, today's bountiful Delve rotation with its rotating story variant, your character's weekly checklist, Voidforge progress, and a roll-up across all your alts.
+The broker bar always shows the most-urgent event — a wave countdown, a "FIRING NOW!" for the Void Incursion, a Skinning Den firing in 12 minutes. Hover the bar (or open the minimap button) and a structured tooltip unfolds: what's happening right now, what's coming in the next 24 hours, today's bountiful Delve rotation with its rotating story variant, your character's full weekly checklist (world boss, the Saltheril's Soiree / Lady Liadrin / Bonus Event picks, Featured Dungeon, Prey Hunts, Delver's Bounty, Arcantina, the myth-crest delve grind, and more), and Voidforge progress. A separate smoke-glass panel rolls the same weekly state up across every alt.
+
+Most rows are annotated with the detail you'd otherwise alt-tab for — which subfaction or dungeon you picked this week, the active Void Assault zone, your per-tier Prey hunt counts, your crest progress toward the weekly cap — and rows you can't do yet (max-level weeklies on a levelling alt) hide themselves instead of nagging.
 
 Retail only. Requires Midnight (Interface 120005+). Works with any LibDataBroker host (Arcana, ElvUI, Bazooka, Broker2FuBar, TitanPanel, …); minimap-button entry point is built in for users who don't run a broker bar.
 
@@ -31,21 +33,24 @@ Retail only. Requires Midnight (Interface 120005+). Works with any LibDataBroker
 - Both halves toggleable independently in the Settings panel.
 
 ### Tooltip sections
-- **Now** — currently-firing events, sorted by urgency: firing > closer-to-firing progress bars > soonest countdowns > untimed continuous (Stormarion Assault between waves, Legends of the Haranir, Prey, etc.).
+- **Now** — currently-firing events, sorted by urgency: firing > closer-to-firing progress bars > soonest countdowns > untimed continuous (Stormarion Assault between waves, Legends of the Haranir, etc.). Rotating events show their active zone in parentheses even when you're elsewhere — *Void Assaults (Eversong Woods)*, *Saltheril's Soiree (Eversong Woods)*.
 - **Upcoming (next 24h)** — scheduler-driven next fires, ordered by when they happen (matches Blizzard's events panel order).
 - **Bountiful Delves (today)** — today's rotation with each delve's active **story variant** in parentheses; a green ✓ next to the story name means this character has the matching achievement criterion (per-delve "Stories" achievement, 61724–61733) already completed.
-- **This Week (CharName)** — per-character weekly checklist: World Boss, Abundant Offerings, Stand Your Ground, A Nightmarish Task, Lady Liadrin's Weekly (with which choice you picked annotated), Void Assault active zone, Lost Legends, Bonus Event Weekly. Outstanding rows up top in white, completed rows dim with a green ✓, and an amber `turn in!` state for weeklies whose objectives are done but the quest is still in your log waiting on handoff.
+- **This Week (CharName)** — the per-character weekly checklist, the heart of the addon. Tracks World Boss, Abundant Offerings, Stand Your Ground, A Nightmarish Task (with live `x/3` objective count), Lady Liadrin's Weekly, Bonus Event Weekly and Saltheril's Soiree (each annotated with the choice you picked), Featured Dungeon (with this week's dungeon), Void Assault (active zone), Lost Legends, Gnawing Curiosity, Delver's Bounty, Arcantina (with lifetime patron progress), Prey Hunts (per-tier `Normal x/4 · Hard x/4 · Nightmare x/4`), and the **Myth Crests (Delves)** counter toward the weekly cap. Outstanding rows sit up top in white, completed rows dim with a green ✓, and an amber `turn in!` state flags weeklies whose objectives are done but the quest is still in your log. Rows you can't do yet — max-level weeklies on a levelling alt — hide automatically rather than showing a permanent ✗; on sub-90 alts a Halduron levelling weekly (*Hope in the Darkest Corners*) takes the Featured Dungeon slot.
 - **Voidforge progress** — per-character N/M counters scraped from Decimus's bars in Voidstorm: *Voidcores transmuted* (weekly bonus-roll allowance), *Nilhammer empowered* (lifetime 0–4, gates the Ascendant Nilhammer upgrade). Only populates after the character has been near Decimus once; persists across sessions.
-- **Alts roll-up** — aggregate "X / Y done" per activity across every character you've logged into with the addon enabled. Stale chars (no login since the most recent weekly reset) are excluded so the aggregate reflects only fresh data.
+
+Every tooltip section can be toggled off individually in Settings.
 
 ### Detached Alts panel
 - **Shift-Right-click** the broker (or minimap button) opens a scrollable per-alt grid showing every tracked character's weekly state at a glance.
-- Class-coloured names, **WBoss / AbunO / SYG / NightT / LiadW / VoidA / LL** column headers (hover for the full label), drag-to-reposition, geometry persists.
-- Background opacity tunable in Settings (10–100 %, default 60 % — slightly transparent like a tooltip).
+- Modern dark **smoke-glass** styling — solid backdrop, thin amber border, amber title. Auto-sizes to the number of tracked weeklies, and closes on **ESC** or its close button.
+- Class-coloured names, abbreviated column headers (hover for the full label), drag-to-reposition, geometry persists. Weeklies a character can't do yet show `—` instead of a misleading ✗.
+- **Right-click a row to hide** that character; a *Show hidden characters* toggle in Settings brings them back dimmed for un-hiding.
+- Background opacity tunable in Settings (10–100 %, default 60 % — the pane goes translucent while the border stays crisp).
 
 ### Settings panel
 - *Escape → Options → AddOns → Broker: MidnightEvents*, or **Right-click** the broker / minimap button.
-- Per-section visibility toggles for every tooltip section (Now / Upcoming / Bountiful Delves / This Week / Voidforge / Alts).
+- Per-section visibility toggles for every tooltip section (Now / Upcoming / Bountiful Delves / This Week / Voidforge).
 - World Boss row visibility in the This Week section.
 - Broker bar split toggles (show weekly progress / show next-event tag).
 - Alts panel background opacity slider.
@@ -122,6 +127,15 @@ Issues and pull requests are welcome.
 Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full license text is in the `LICENSE` file in the source distribution.
 
 ## Changelog
+
+### v0.9.8-beta — Myth crest delve counter
+
+**New features:**
+- **Myth Crests (Delves)** weekly row tracks your progress toward the weekly cap of mythic crests looted from bountiful delves. Counts only delve-sourced crests — raid and dungeon crests don't count. Max-level only.
+- Because the count can only be tallied while the addon is loaded, the row greys out as *from next reset* on a fresh or mid-week install and activates automatically at your next weekly reset, so it never shows a misleading partial total.
+
+**Improvements:**
+- **World Boss row** now matches the other This Week rows visually — the boss name sits as a grey parenthetical in the label, with just the ✓/✗ in the value column.
 
 ### v0.9.7-beta — Alts panel restyle
 

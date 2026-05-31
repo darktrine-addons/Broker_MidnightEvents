@@ -1261,9 +1261,39 @@ local function BuildTooltip()
             end
         end
 
-        -- Header with completion summary.
-        local total, done = #rows, 0
-        for _, r in ipairs(rows) do if r.done then done = done + 1 end end
+        -- Myth-crest delve counter row (max-level only — Myth crests come
+        -- from high-tier delves). Three display states:
+        --   pending  — feature hasn't witnessed a reset on this char yet
+        --              (mid-week install): greyed "from next reset",
+        --              EXCLUDED from the done summary (not trackable yet).
+        --   counting — validSince == currentReset: "N/20" in warm gold.
+        --   done     — N >= cap: green ✓.
+        local crestLevel = UnitLevel and UnitLevel("player") or 0
+        if crestLevel >= 90 and ns.mythCrestCurrencyID then
+            local cd = ns.char and ns.char.crestDelve
+            local currentReset = ns.char and ns.char.weeklyReset or 0
+            local valid = cd and cd.validSince == currentReset and currentReset > 0
+            local count = (cd and cd.count) or 0
+            local cap   = ns.mythCrestWeeklyCap or 20
+            rows[#rows + 1] = {
+                label        = "Myth Crests |cff909090(Delves)|r",
+                crest        = true,
+                crestPending = not valid,
+                crestCount   = count,
+                crestCap     = cap,
+                done         = valid and count >= cap or false,
+            }
+        end
+
+        -- Header with completion summary. Pending crest row is excluded
+        -- from the denominator (it isn't actionable yet).
+        local total, done = 0, 0
+        for _, r in ipairs(rows) do
+            if not r.crestPending then
+                total = total + 1
+                if r.done then done = done + 1 end
+            end
+        end
         local summary = done .. "/" .. total .. " done"
         local sr, sg, sb = CV_r, CV_g, CV_b
         if done == total then sr, sg, sb = 0.6, 0.6, 0.6 end  -- fully done
@@ -1273,11 +1303,15 @@ local function BuildTooltip()
         Tooltip:AddDoubleLine("This Week (" .. charName .. ")", summary,
             CL_r, CL_g, CL_b, sr, sg, sb)
 
-        -- Stable sort: outstanding before done, original order within each group.
+        -- Stable sort: outstanding before done, original order within each
+        -- group. A pending crest row ranks with done rows (not actionable
+        -- yet) so it sits at the bottom rather than atop the outstanding list.
         local indexed = {}
         for i, r in ipairs(rows) do indexed[i] = { row = r, idx = i } end
         table.sort(indexed, function(a, b)
-            if a.row.done ~= b.row.done then return not a.row.done end
+            local aLow = a.row.done or a.row.crestPending
+            local bLow = b.row.done or b.row.crestPending
+            if aLow ~= bLow then return not aLow end
             return a.idx < b.idx
         end)
 
@@ -1286,7 +1320,14 @@ local function BuildTooltip()
             local labelR, labelG, labelB
             local valueText, vR, vG, vB
 
-            if r.done then
+            if r.crestPending then
+                -- Crest counter not yet active on this char (mid-week
+                -- install): greyed placeholder so the feature is
+                -- discoverable but never shows a wrong partial count.
+                labelR, labelG, labelB = 0.45, 0.45, 0.45
+                valueText = "from next reset"
+                vR, vG, vB = 0.45, 0.45, 0.45
+            elseif r.done then
                 -- Done: dim grey label, green checkmark. World Boss name
                 -- now rides in the label as a grey parenthetical hint
                 -- (set during row construction), so the value column
@@ -1294,6 +1335,11 @@ local function BuildTooltip()
                 labelR, labelG, labelB = 0.55, 0.55, 0.55
                 valueText = CHECK
                 vR, vG, vB = 0.6, 0.6, 0.6
+            elseif r.crest then
+                -- Crest counting: white label, warm-gold N/cap.
+                labelR, labelG, labelB = CV_r, CV_g, CV_b
+                valueText = "|cffd9c97f" .. r.crestCount .. "/" .. r.crestCap .. "|r"
+                vR, vG, vB = CV_r, CV_g, CV_b
             elseif r.readyForTurnIn then
                 -- Objectives are met but the player hasn't formally handed
                 -- the quest in yet. Render in amber to draw attention —
@@ -1524,6 +1570,38 @@ f:SetScript("OnEvent", function(self, event, arg1)
        or event == "QUEST_REMOVED" then
         RefreshWeeklies()
     end
+    UpdateBrokerText()
+    if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
+        BuildTooltip()
+    end
+    if ns.AltsPanel and ns.AltsPanel.RefreshIfShown then
+        ns.AltsPanel.RefreshIfShown()
+    end
+end)
+
+-- ── Myth-crest delve counter ────────────────────────────────────────────────
+-- Counts Myth Dawncrest gains while inside a delve (scenario), capped at
+-- the weekly max. There's no quest flag or currency weekly-cap field for
+-- this weekly (verified 2026-05-31), so we tally it from the currency
+-- event. The scenario gate excludes raid / dungeon crests by construction.
+-- Only counts once tracking is "valid" for the current week — i.e. this
+-- char witnessed the weekly-reset boundary (Settings.lua sets validSince),
+-- so a mid-week install greys the row rather than showing a partial.
+local crestFrame = CreateFrame("Frame")
+crestFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+crestFrame:SetScript("OnEvent", function(_, _, currencyType, quantity, quantityChange)
+    if not ns.mythCrestCurrencyID or currencyType ~= ns.mythCrestCurrencyID then return end
+    if (quantityChange or 0) <= 0 then return end
+    local _, instanceType = IsInInstance()
+    if instanceType ~= "scenario" then return end
+    if not ns.char then return end
+    local currentReset = ns.char.weeklyReset or 0
+    local cd = ns.char.crestDelve
+    -- Gate: only accumulate when this week is cleanly tracked from a
+    -- witnessed reset. Otherwise the count would be partial/misleading.
+    if not (cd and cd.validSince == currentReset and currentReset > 0) then return end
+    local cap = ns.mythCrestWeeklyCap or 20
+    cd.count = math.min((cd.count or 0) + quantityChange, cap)
     UpdateBrokerText()
     if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
         BuildTooltip()

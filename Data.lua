@@ -303,6 +303,22 @@ ns.weeklies = {
     },
 }
 
+-- Myth-crest delve weekly. There is NO quest flag or currency weekly-cap
+-- field for "loot 20 Myth Dawncrests from bountiful delves per week"
+-- (confirmed 2026-05-31: a 5-crest delve loot ticked no quest objective,
+-- and the currency API reports maxWeekly=0 / earnedThisWeek=0 for the
+-- Dawncrest tiers). So we count it ourselves: sum CURRENCY_DISPLAY_UPDATE
+-- gains for the Myth Dawncrest currency while inside a delve (scenario),
+-- capped at the weekly max. Raid / dungeon crests are excluded by the
+-- scenario gate.
+--
+-- Both values are patch-fragile (the currency ID rotates per season; the
+-- cap can change on patch). Re-harvest via /mecrest if the row stops
+-- updating or the cap looks wrong. Currency ID verified from a live
+-- delve loot 2026-05-31 (Myth Dawncrest, +5 per coffer).
+ns.mythCrestCurrencyID = 3347
+ns.mythCrestWeeklyCap  = 20
+
 -- Last-resort POI name lookup. C_AreaPoiInfo.GetAreaPOIInfo returns nil
 -- for several scheduler-only POI IDs (Abundance variants) regardless of
 -- which mapID we pass and regardless of where the player is standing —

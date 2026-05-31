@@ -92,6 +92,11 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.worldBoss       = char.worldBoss   or { done = false }
     char.weeklies        = char.weeklies    or {}
     char.worldBossesDone = nil  -- legacy, replaced by worldBoss table
+    -- Myth-crest delve counter. `validSince` stays nil until this char
+    -- witnesses a real weekly-reset boundary (set in the reset hook
+    -- below), so a mid-week install greys the row instead of showing a
+    -- partial count. See the reset block + Core's CURRENCY hook.
+    char.crestDelve      = char.crestDelve  or { count = 0 }
 
     -- Class is stable per char (race+faction changes leave it intact); record
     -- it once at login so the Alts detail panel can color names without
@@ -154,6 +159,11 @@ sf:SetScript("OnEvent", function(self, event, name)
     -- refreshes it. Scope-"lifetime" entries (Nilhammer) persist.
     local currentReset = CurrentWeeklyResetEpoch()
     if currentReset and char.weeklyReset < currentReset then
+        -- Capture the prior reset epoch BEFORE overwriting it: 0 means a
+        -- fresh / mid-week install (we never saw last week), a non-zero
+        -- value means we were already running and are now witnessing a
+        -- genuine reset boundary.
+        local priorReset = char.weeklyReset
         char.worldBoss   = { done = false }
         char.weeklies    = {}
         char.weeklyReset = currentReset
@@ -179,6 +189,17 @@ sf:SetScript("OnEvent", function(self, event, name)
         -- Eversong board.
         if char.preyHunts and char.preyHunts.max then
             char.preyHunts.value = char.preyHunts.max
+        end
+        -- Myth-crest delve counter resets to 0 each week. Mark this week
+        -- as cleanly tracked (validSince) ONLY when priorReset > 0 — i.e.
+        -- we witnessed a real boundary, so the 0-baseline is genuine. A
+        -- fresh / mid-week install (priorReset == 0) leaves validSince
+        -- unset, greying the row until this char's first real reset, so
+        -- it never displays an undercounted partial.
+        char.crestDelve = char.crestDelve or { count = 0 }
+        char.crestDelve.count = 0
+        if priorReset and priorReset > 0 then
+            char.crestDelve.validSince = currentReset
         end
     end
 
