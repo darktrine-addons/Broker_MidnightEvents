@@ -95,11 +95,13 @@ ns.weeklies = {
           93595,  -- A Call to Delves (5 Midnight Delves)
           93593,  -- A Call to Battle (4 BG wins)
           93598,  -- Emissary of War (4 Mythic Dungeons) — Aethas, freq=2
+          93614,  -- A Fel Path Through Time (5 Timewalking dungeons) — 2026-06-03
       },
       picks = {
           [93595] = "Delves",
           [93593] = "Battle",
           [93598] = "Dungeons",
+          [93614] = "Timewalking",
       },
     },
 
