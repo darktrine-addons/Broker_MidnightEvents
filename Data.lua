@@ -42,14 +42,21 @@ ns.weeklies = {
     { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task",  short = "NightT",
       hint = "Prey Hunts", objectiveRequired = 3, levelMin = 90 },
 
-    -- Lady Liadrin's choice pool. She offers ~4 of 8 per char per week;
-    -- completing one locks the others on that char. All freq=3, all reward
-    -- Spark of Radiance + Apex Cache. The `picks` map enables Core's
-    -- generic DetectWeeklyPicks scan + the "(<choice> picked, N/M)"
-    -- annotation in This Week.
+    -- Lady Liadrin's "Unity against the Void" choice pool. She offers 4
+    -- of the pool per char per week; completing one flags ALL members
+    -- (lockout) and the weekly reset clears them all (verified 2026-06-03
+    -- — NOT lifetime accumulation; see memory wow-isquestflaggedcompleted-
+    -- lifetime). All freq=3, reward Spark of Radiance + Apex Cache. The
+    -- `picks` map drives Core's DetectWeeklyPicks active-log scan + the
+    -- "(<choice> picked)" annotation.
+    --
+    -- Pool is 10, not 9: 93766 "Midnight: World Quests" was missing until
+    -- 2026-06-03 (surfaced as a weekly choice on Shatanaris). Watch for
+    -- further members on weeks that offer choices not in this map.
     { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW",
       levelMin = 90,
       questIDs = {
+          93766,  -- Midnight: World Quests
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
           93890,  -- Midnight: Abundance
@@ -61,6 +68,7 @@ ns.weeklies = {
           95842,  -- Midnight: Void Assaults
       },
       picks = {
+          [93766] = "World Quests",
           [93769] = "Housing",
           [93889] = "Soiree",
           [93890] = "Abundance",
