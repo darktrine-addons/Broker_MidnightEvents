@@ -303,13 +303,16 @@ ns.weeklies = {
       hint = "warband first delve T4+" },
 
     -- Delver's Bounty weekly. The Beacon of Hope → Nullaeus → Delver's
-    -- Bounty → Hidden Trove chain. Single trackable flag 91190 is an
-    -- internal Blizzard system quest (Wowhead: "doesn't exist") that
-    -- flips on Hidden Trove turn-in and clears on weekly reset.
-    -- Confirmed 2026-05-26 reset cycle. See memory:
-    --   brokermidnightevents-beacon-of-hope-untrackable
+    -- Bounty → Hidden Trove chain. 91190 turned out to track POSSESSION
+    -- (true = holding an unconsumed bounty), not completion — so keying
+    -- the done-state on it is backwards (shows ✓ while holding a bounty,
+    -- ✗ after consuming it = actually completing). Until the consume-edge
+    -- model is confirmed (one solo Beacon run with a deliberate loot→
+    -- consume gap), `comingSoon` renders the row greyed with "coming soon"
+    -- instead of a wrong ✓/✗. Re-enable by dropping comingSoon once wired.
+    -- See memory: brokermidnightevents-beacon-of-hope-untrackable
     { key = "delversBounty", questID = 91190, label = "Delver's Bounty", short = "DBnty",
-      hint = "Beacon of Hope" },
+      hint = "Beacon of Hope", comingSoon = true },
 
     -- Arcantina — Khadgar's patron-tavern hub (unlocked via Arator's
     -- Journey campaign chapter + Personal Key toy). Weekly visit slot

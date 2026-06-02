@@ -93,10 +93,11 @@ local function GetColumns()
         }
     end
     for _, w in ipairs(ns.weeklies or {}) do
-        -- Mirror the tooltip's hideInTooltip suppression so suppressed rows
-        -- (e.g. Arcantina pending its credit-trigger investigation) don't
-        -- clutter the panel either.
-        if not w.hideInTooltip then
+        -- Mirror the tooltip's suppression: hideInTooltip (Arcantina, parked)
+        -- and comingSoon (Delver's Bounty, pending the Beacon model) rows
+        -- don't get an alts column — the ✓/✗ grid has no room for a
+        -- "coming soon" cell and the underlying flag is known-wrong.
+        if not w.hideInTooltip and not w.comingSoon then
             cols[#cols + 1] = {
                 key      = w.key,
                 short    = w.short or w.label or w.key,

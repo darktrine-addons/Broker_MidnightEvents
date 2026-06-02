@@ -1302,9 +1302,10 @@ local function BuildTooltip()
                 end
                 rows[#rows + 1] = {
                     label          = rowLabel,
-                    done           = weeklyState[w.key] or false,
-                    readyForTurnIn = IsWeeklyReadyForTurnIn(w),
-                    inProgress     = IsWeeklyInProgress(w),
+                    done           = (not w.comingSoon) and weeklyState[w.key] or false,
+                    readyForTurnIn = (not w.comingSoon) and IsWeeklyReadyForTurnIn(w),
+                    inProgress     = (not w.comingSoon) and IsWeeklyInProgress(w),
+                    comingSoon     = w.comingSoon or false,
                 }
               end  -- if not w.hideInTooltip and not levelGated
             end
@@ -1334,11 +1335,11 @@ local function BuildTooltip()
             }
         end
 
-        -- Header with completion summary. Pending crest row is excluded
-        -- from the denominator (it isn't actionable yet).
+        -- Header with completion summary. Pending crest + coming-soon rows
+        -- are excluded from the denominator (not actionable / not tracked yet).
         local total, done = 0, 0
         for _, r in ipairs(rows) do
-            if not r.crestPending then
+            if not r.crestPending and not r.comingSoon then
                 total = total + 1
                 if r.done then done = done + 1 end
             end
@@ -1364,8 +1365,8 @@ local function BuildTooltip()
             -- `not false == not nil`, the raw values violate strict weak
             -- ordering (comparator returns true for both (a,b) and (b,a)),
             -- which makes table.sort read out of bounds and pass nil.
-            local aLow = (a.row.done or a.row.crestPending) and true or false
-            local bLow = (b.row.done or b.row.crestPending) and true or false
+            local aLow = (a.row.done or a.row.crestPending or a.row.comingSoon) and true or false
+            local bLow = (b.row.done or b.row.crestPending or b.row.comingSoon) and true or false
             if aLow ~= bLow then return not aLow end
             return a.idx < b.idx
         end)
@@ -1375,7 +1376,14 @@ local function BuildTooltip()
             local labelR, labelG, labelB
             local valueText, vR, vG, vB
 
-            if r.crestPending then
+            if r.comingSoon then
+                -- Tracking not wired/confirmed yet (Delver's Bounty pending
+                -- the Beacon consume-edge model). Greyed "coming soon" so the
+                -- row is discoverable without showing a wrong ✓/✗.
+                labelR, labelG, labelB = 0.45, 0.45, 0.45
+                valueText = "coming soon"
+                vR, vG, vB = 0.45, 0.45, 0.45
+            elseif r.crestPending then
                 -- Crest counter not yet active on this char (mid-week
                 -- install): greyed placeholder so the feature is
                 -- discoverable but never shows a wrong partial count.

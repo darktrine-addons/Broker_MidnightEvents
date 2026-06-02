@@ -1,6 +1,6 @@
 # Broker: MidnightEvents
 
-> 🚧 **Beta in active development.** All listed features work and the addon is daily-driver stable across multiple characters, but the surface is still evolving — expect occasional polish-level changes between releases. Feedback, bug reports, and feature ideas welcome on the [issue tracker](https://github.com/darktrine-addons/Broker_MidnightEvents/issues).
+> ✅ **Stable (v1.0), actively maintained.** Daily-driver stable across multiple characters. Midnight is a living expansion, so new weeklies and the odd quest-ID shift get folded in as they appear. Feedback, bug reports, and feature ideas welcome on the [issue tracker](https://github.com/darktrine-addons/Broker_MidnightEvents/issues).
 
 **A compact world-event timer + per-character weekly checklist for WoW Midnight, served through any LibDataBroker host.**
 
@@ -127,6 +127,19 @@ Issues and pull requests are welcome.
 Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full license text is in the `LICENSE` file in the source distribution.
 
 ## Changelog
+
+### v1.0.0 — stable
+
+First stable release. The Now / Upcoming / Bountiful Delves / This Week / Voidforge tooltip, the broker bar's soonest-event tag and weekly progress, the smoke-glass Alts panel, and the native Settings panel are all feature-complete and validated across multiple characters.
+
+**New features:**
+- **Lady Liadrin's Weekly and the Bonus Event Weekly now cover their full choice pools.** Liadrin tracks all twelve options (World Quests, Housing, Soiree, Abundance, Legends of the Haranir, Stormarion, Delves, Prey, Dungeons, World Boss, Battlegrounds, Void Assaults); the Bonus Event recognises six of the seven rotating events (Battlegrounds, Delves, Mythic Dungeons, Pet Battles, World Quests, Timewalking). Whichever one you pick is detected and annotated.
+
+**Fixes:**
+- **Voidcores transmuted no longer resets to zero each week.** It's a season-long total with a cap that rises weekly, so the value now carries over; right after a reset the row shows `NN/??` with a brief "visit Decimus" prompt until your next Voidstorm visit syncs the new cap.
+
+**Coming soon:**
+- **Delver's Bounty** shows a greyed *coming soon* — the Beacon of Hope → Hidden Trove weekly needs one more piece of in-game verification before its tracking is trustworthy, landing in a follow-up.
 
 ### v0.9.9-beta — crash fix + weekly-row polish
 
