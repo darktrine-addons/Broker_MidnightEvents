@@ -178,8 +178,18 @@ sf:SetScript("OnEvent", function(self, event, name)
         char.picks       = {}
         if char.voidforge and ns.charProgress then
             for _, entry in ipairs(ns.charProgress) do
-                if entry.scope == "weekly" and char.voidforge[entry.key] then
-                    char.voidforge[entry.key].value = 0
+                local vf = char.voidforge[entry.key]
+                if vf then
+                    if entry.scope == "weekly" then
+                        vf.value = 0
+                    elseif entry.scope == "seasonCap" then
+                        -- Value is season-cumulative — it carries over. Only
+                        -- the cap rises (+2/wk for Voidcores), and we can't
+                        -- know the new cap until a Decimus visit re-syncs the
+                        -- widget. Mark it stale so the render shows NN/?? with
+                        -- a "visit Decimus" prompt until the next sync.
+                        vf.maxStale = true
+                    end
                 end
             end
         end

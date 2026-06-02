@@ -360,12 +360,21 @@ ns.knownEventNames = {
 -- the last-known value persists.
 --
 -- Scope semantics:
---   "weekly"   — the bar value resets each weekly reset (Voidcores).
---                Settings.lua weekly-reset hook sets cached value to 0
---                so the tooltip reflects the post-reset state immediately.
---   "lifetime" — the bar ticks up over multiple weeks (Nilhammer: +1/wk
---                up to 4/4). Once `completedAt` is reached, the row
---                renders dim with a ✓ permanently.
+--   "weekly"    — the bar value resets each weekly reset. Settings.lua's
+--                 reset hook sets cached value to 0 so the tooltip reflects
+--                 the post-reset state immediately. (No current users —
+--                 Voidcores turned out to be seasonCap.)
+--   "seasonCap" — the VALUE is season-cumulative and persists across weekly
+--                 resets; only the CAP rises (+2/week for Voidcores in S1,
+--                 may change on patch). We can't know the new cap until a
+--                 Decimus visit re-syncs the widget, so the reset hook keeps
+--                 the value and marks `maxStale`; the render shows `NN/??`
+--                 plus a faint "visit Decimus" prompt until the next sync
+--                 clears it. Verified 2026-06-03: Decimus read 12/14 the
+--                 reset after 12/12, value carried over.
+--   "lifetime"  — the bar ticks up over multiple weeks (Nilhammer: +1/wk
+--                 up to 4/4). Once `completedAt` is reached, the row
+--                 renders dim with a ✓ permanently.
 -- Quest that signals the Voidforge build chain is complete. 95268 "New
 -- Tools, New Heights" is the post-build bridge that opens the Nilhammer
 -- empowerment line — completion guarantees Decimus is interactable. The
@@ -421,8 +430,8 @@ ns.charProgress = {
         key         = "voidcores",
         widgetSetID = 1960,
         label       = "Voidcores transmuted",
-        hint        = "weekly bonus rolls",
-        scope       = "weekly",
+        hint        = "bonus rolls, +2 cap/wk",
+        scope       = "seasonCap",
     },
     {
         key         = "nilhammer",

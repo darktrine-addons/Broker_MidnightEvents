@@ -1470,12 +1470,22 @@ local function BuildTooltip()
                     "  Visit Decimus in Voidstorm to populate.",
                     0.55, 0.55, 0.55)
             else
+                local anyMaxStale = false
                 for _, r in ipairs(rows) do
                     local label = r.entry.label
                     if r.entry.hint then
                         label = label .. " |cff707070(" .. r.entry.hint .. ")|r"
                     end
-                    local valueStr = r.p.value .. "/" .. r.p.max
+                    -- seasonCap rows post-reset: value carried over but the
+                    -- cap rose and hasn't been re-synced from Decimus yet, so
+                    -- show the unknown denominator and flag the prompt below.
+                    local valueStr
+                    if r.p.maxStale then
+                        valueStr   = r.p.value .. "/??"
+                        anyMaxStale = true
+                    else
+                        valueStr = r.p.value .. "/" .. r.p.max
+                    end
                     local done = r.entry.completedAt
                                  and r.p.value >= r.entry.completedAt
                     local lr, lg, lb = CV_r, CV_g, CV_b
@@ -1486,6 +1496,11 @@ local function BuildTooltip()
                         valueStr   = CHECK .. " " .. valueStr
                     end
                     Tooltip:AddDoubleLine(label, valueStr, lr, lg, lb, vr, vg, vb)
+                end
+                if anyMaxStale then
+                    Tooltip:AddLine(
+                        "  Visit Decimus in Voidstorm to update the new cap.",
+                        0.45, 0.45, 0.45)
                 end
             end
         end
