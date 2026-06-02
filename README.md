@@ -128,6 +128,15 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
+### v0.9.9-beta — crash fix + weekly-row polish
+
+**Fixes:**
+- **Tooltip no longer errors on hover** once the Myth Crests row goes active at your weekly reset. (A sort-ordering bug surfaced the moment a partly-filled crest counter sat alongside the other rows.) If you saw a `Core.lua` error hovering the broker, this clears it.
+- **A Nightmarish Task** no longer shows a stale `0/3` after you've completed it — the count only appears while the quest is in your log; once done the row just shows the ✓.
+
+**Improvements:**
+- **Partially-complete weeklies** now show a yellow in-progress dot instead of the red ✗, a visible step between "not started" and "done" (most useful for Prey Hunts mid-grind).
+
 ### v0.9.8-beta — Myth crest delve counter
 
 **New features:**
