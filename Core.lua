@@ -1358,8 +1358,14 @@ local function BuildTooltip()
         local indexed = {}
         for i, r in ipairs(rows) do indexed[i] = { row = r, idx = i } end
         table.sort(indexed, function(a, b)
-            local aLow = a.row.done or a.row.crestPending
-            local bLow = b.row.done or b.row.crestPending
+            -- Coerce to strict booleans: `done or crestPending` can yield
+            -- false (valid-incomplete crest row) for one operand and nil
+            -- (normal row) for another. Since `false ~= nil` is true while
+            -- `not false == not nil`, the raw values violate strict weak
+            -- ordering (comparator returns true for both (a,b) and (b,a)),
+            -- which makes table.sort read out of bounds and pass nil.
+            local aLow = (a.row.done or a.row.crestPending) and true or false
+            local bLow = (b.row.done or b.row.crestPending) and true or false
             if aLow ~= bLow then return not aLow end
             return a.idx < b.idx
         end)
