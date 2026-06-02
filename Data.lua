@@ -50,9 +50,13 @@ ns.weeklies = {
     -- `picks` map drives Core's DetectWeeklyPicks active-log scan + the
     -- "(<choice> picked)" annotation.
     --
-    -- Pool is 10, not 9: 93766 "Midnight: World Quests" was missing until
-    -- 2026-06-03 (surfaced as a weekly choice on Shatanaris). Watch for
-    -- further members on weeks that offer choices not in this map.
+    -- Pool enumerated to 12 via Wowhead + Warcraft Wiki (meta quest 93744
+    -- "Unity Against the Void") 2026-06-03. 93766/93891/93913 were missing
+    -- from the original 9. 93891 "Legends of the Haranir" is flagged
+    -- obsolete on Wowhead — included (additive-safe; pool resets weekly so
+    -- a stale flag can't false-positive permanently) but unverified live.
+    -- No Raid/M+/Professions member surfaced; harvest if a future week
+    -- offers a choice not in this map.
     { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW",
       levelMin = 90,
       questIDs = {
@@ -60,10 +64,12 @@ ns.weeklies = {
           93769,  -- Midnight: Housing
           93889,  -- Midnight: Saltheril's Soiree
           93890,  -- Midnight: Abundance
+          93891,  -- Midnight: Legends of the Haranir  (Wowhead: obsolete — verify)
           93892,  -- Midnight: Stormarion Assault
           93909,  -- Midnight: Delves
           93910,  -- Midnight: Prey
           93911,  -- Midnight: Dungeons
+          93913,  -- Midnight: World Boss
           94457,  -- Midnight: Battlegrounds
           95842,  -- Midnight: Void Assaults
       },
@@ -72,10 +78,12 @@ ns.weeklies = {
           [93769] = "Housing",
           [93889] = "Soiree",
           [93890] = "Abundance",
+          [93891] = "Haranir Legends",
           [93892] = "Stormarion",
           [93909] = "Delves",
           [93910] = "Prey",
           [93911] = "Dungeons",
+          [93913] = "World Boss",
           [94457] = "Battlegrounds",
           [95842] = "Void Assaults",
       },
@@ -83,24 +91,34 @@ ns.weeklies = {
 
     -- Bonus Event Weekly — separate system from Liadrin's pool. One bonus
     -- event is active per week on a 7-event rotation; reward varies by
-    -- event type (Cache of Quel'Thalas Treasures for some, Mark of
-    -- Honor/Conquest for PvP, etc.). Giver: Archmage Aethas Sunreaver in
-    -- Silvermoon. The "A Call to X" naming covers only 2 of the 7 events
-    -- (Delves, Battle); the others use different names (The Arena Calls,
-    -- The World Awaits, The Very Best, Emissary of War, Timewalking).
-    -- Expand questIDs/picks as those quest IDs surface via harvest.
+    -- event type (Cache of Quel'Thalas Treasures for PvE, Mark of Honor /
+    -- Conquest for PvP). Giver: Archmage Aethas Sunreaver (NPC 256212) in
+    -- Silvermoon. Each event is its own weekly quest with a distinct title.
+    --
+    -- Enumerated via Wowhead 2026-06-03 — 6 of 7 mapped. The 7th, Arena
+    -- Skirmishes ("The Arena Calls"), appears to REUSE the cross-expansion
+    -- TWW quest 83358 rather than mint a Midnight 935xx ID. NOT added: a
+    -- TWW quest may be lifetime-flagged from old Arena play and would
+    -- false-positive this row as done. Harvest the real Midnight ID via
+    -- GetQuestID() on Aethas's dialog during an Arena bonus week.
     { key = "bonusEvent", label = "Bonus Event Weekly", short = "BonusW",
       levelMin = 90,
       questIDs = {
-          93595,  -- A Call to Delves (5 Midnight Delves)
           93593,  -- A Call to Battle (4 BG wins)
+          93595,  -- A Call to Delves (5 Midnight Delves)
           93598,  -- Emissary of War (4 Mythic Dungeons) — Aethas, freq=2
-          93614,  -- A Fel Path Through Time (5 Timewalking dungeons) — 2026-06-03
+          93599,  -- The Very Best (Pet Battle)
+          93605,  -- The World Awaits (World Quests)
+          93614,  -- A Fel Path Through Time (5 Timewalking dungeons)
+          -- 83358 Arena ("The Arena Calls") held — cross-expansion TWW ID,
+          -- false-positive risk; harvest the Midnight ID in an Arena week.
       },
       picks = {
-          [93595] = "Delves",
           [93593] = "Battle",
+          [93595] = "Delves",
           [93598] = "Dungeons",
+          [93599] = "Pet Battles",
+          [93605] = "World Quests",
           [93614] = "Timewalking",
       },
     },
