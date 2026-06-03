@@ -363,11 +363,21 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- secondary because the player is usually targeting the NPC.
         -- Guard explicitly: if either resolves to the player, record nil
         -- (= unknown giver) rather than a wrong attribution.
-        local me   = UnitName("player")
-        local name = UnitName("questnpc")
-        if not name or name == me then name = UnitName("target") end
-        if name == me then name = nil end
-        pendingGiver = name
+        -- UnitName("questnpc") can return a SECRET STRING in 12.x when our
+        -- execution is tainted; the comparison `name == me` then throws
+        -- "attempt to compare ... a secret string value". A secret can't be
+        -- read or compared, so isolate the resolution in a pcall: any secret
+        -- forces the `==` to throw inside it, so whatever survives is a clean
+        -- string (or nil = unknown giver). Loses attribution on tainted
+        -- gossip flows, which is fine for a dev catalogue.
+        local ok, giver = pcall(function()
+            local me   = UnitName("player")
+            local name = UnitName("questnpc")
+            if not name or name == me then name = UnitName("target") end
+            if name == me then name = nil end
+            return name
+        end)
+        pendingGiver = ok and giver or nil
         return
     end
 

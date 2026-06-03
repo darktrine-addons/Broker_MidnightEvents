@@ -494,8 +494,11 @@ SlashCmdList.BMEBEACON = function(msg)
         if Broker_MidnightEventsBeacon.crestLog then
             Broker_MidnightEventsBeacon.crestLog[CharKey()] = nil
         end
+        if Broker_MidnightEventsBeacon.delveLog then
+            Broker_MidnightEventsBeacon.delveLog[CharKey()] = nil
+        end
         lastState = {}
-        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data (incl. crest log).")
+        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data (incl. crest + delve logs).")
         return
     end
     Sample()  -- force one sample now, even outside delve
@@ -774,3 +777,188 @@ cf:SetScript("OnEvent", function(_, event, ...)
         end
     end
 end)
+
+-- ── Delve-wide quest transition recorder (dev) ───────────────────────────────
+-- 91190 turned out to be per-delve plumbing: the flag that PLACES the reward
+-- chest in the delve's reward room and holds it until looted (fires on every
+-- bountiful delve, Beacon=0/Bounty=0). The STILL-OPEN question is what
+-- UNLOCKS that chest from looting Nullaeus's cache mid-delve — an unknown
+-- quest/flag the targeted TRACKED_QUEST_IDS net can't catch.
+--
+-- This casts a wide net while inside a delve (scenario instanceType). It logs
+-- EVERY quest transition, via two complementary channels:
+--   1. Full quest-log diff — catches LOG-VISIBLE quests appearing,
+--      disappearing, completing, or changing objective totals.
+--   2. Raw quest events — every QUEST_TURNED_IN / QUEST_ACCEPTED /
+--      QUEST_REMOVED questID. This is the channel that catches HIDDEN
+--      auto-credit quests (e.g. the 75511 "Tracking Quest" / 48642 churn we
+--      already saw) — exactly the shape a cache-loot credit is likely to
+--      take, since flag-only quests never appear in the log walk.
+-- Every record is stamped with `sinceLoot` (seconds since the last
+-- LOOT_OPENED/CLOSED) so a cache-loot → chest-unlock link is visible at a
+-- glance. Snapshot stays fresh outside delves so the baseline doesn't drift;
+-- recording is gated to scenario so the wider world doesn't spam the log.
+--
+-- SV: Broker_MidnightEventsBeacon.delveLog[char] = { ring, cursor, cap }
+local DELVE_RING        = 400
+local DELVE_POLL_INTERVAL = 10 -- seconds; cheap log walk, delve-gated. Tighter
+                               -- than 60 so a silent (event-less) state change is
+                               -- caught with a small sinceLoot for loot correlation.
+local delveSnap         = nil  -- questID -> { title, complete, sum, text }
+local lastDelveWalkAt   = 0
+local lastLootAt        = 0
+local delveTrigger      = "quest-log"
+
+local function DelveInScenario()
+    local _, itype = IsInInstance()
+    return itype == "scenario"
+end
+
+local function DelveWalk()
+    local snap = {}
+    if not (C_QuestLog and C_QuestLog.GetNumQuestLogEntries) then return snap end
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and info.questID then
+            local qid  = info.questID
+            local objs = C_QuestLog.GetQuestObjectives
+                         and C_QuestLog.GetQuestObjectives(qid) or {}
+            local sum = 0
+            for _, o in ipairs(objs) do sum = sum + (o.numFulfilled or 0) end
+            snap[qid] = {
+                title    = C_QuestLog.GetTitleForQuestID
+                           and C_QuestLog.GetTitleForQuestID(qid),
+                complete = (C_QuestLog.IsComplete and C_QuestLog.IsComplete(qid)) or false,
+                sum      = sum,
+                text     = (objs[1] and objs[1].text) or nil,
+            }
+        end
+    end
+    return snap
+end
+
+local function DelvePush(rec)
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    local root = Broker_MidnightEventsBeacon
+    root.delveLog = root.delveLog or {}
+    local key = CharKey()
+    local dl  = root.delveLog[key]
+    if not dl then dl = { ring = {}, cursor = 0, cap = DELVE_RING }; root.delveLog[key] = dl end
+    dl.cursor = dl.cursor + 1
+    if dl.cursor > dl.cap then dl.cursor = 1 end
+    dl.ring[dl.cursor] = rec
+end
+
+local function DelveStamp(rec)
+    rec.t         = time()
+    rec.trigger   = delveTrigger
+    rec.sinceLoot = (lastLootAt > 0) and (time() - lastLootAt) or nil
+    rec.ctx       = InstanceContext()
+    DelvePush(rec)
+    print(string.format(
+        "|cff66ccffMidnightEvents/Delve|r %s quest %s %q%s [%s]",
+        rec.kind, tostring(rec.questID), tostring(rec.title),
+        rec.sinceLoot and string.format(" (+%ds since loot)", rec.sinceLoot) or "",
+        delveTrigger))
+end
+
+-- Channel 2: raw quest event for a questID (hidden auto-credit catch).
+local function DelveEvent(kind, qid)
+    if not qid or not DelveInScenario() then return end
+    DelveStamp({
+        kind    = "event:" .. kind,
+        questID = qid,
+        title   = C_QuestLog and C_QuestLog.GetTitleForQuestID
+                  and C_QuestLog.GetTitleForQuestID(qid) or nil,
+    })
+end
+
+-- Channel 1: full quest-log diff. Always refreshes the snapshot; only
+-- emits records while in a delve.
+local function DelveDiff()
+    local now = DelveWalk()
+    if delveSnap and DelveInScenario() then
+        for qid, cur in pairs(now) do
+            local prev = delveSnap[qid]
+            if not prev then
+                DelveStamp({ kind = "added", questID = qid, title = cur.title, text = cur.text })
+            else
+                if cur.complete and not prev.complete then
+                    DelveStamp({ kind = "complete", questID = qid, title = cur.title, text = cur.text })
+                end
+                if cur.sum ~= prev.sum then
+                    DelveStamp({ kind = "progress", questID = qid, title = cur.title,
+                                 text = cur.text, from = prev.sum, to = cur.sum })
+                end
+            end
+        end
+        for qid, prev in pairs(delveSnap) do
+            if not now[qid] then
+                DelveStamp({ kind = "removed", questID = qid, title = prev.title })
+            end
+        end
+    end
+    delveSnap = now
+end
+
+local df = CreateFrame("Frame")
+df:RegisterEvent("QUEST_LOG_UPDATE")
+df:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
+df:RegisterEvent("QUEST_ACCEPTED")
+df:RegisterEvent("QUEST_TURNED_IN")
+df:RegisterEvent("QUEST_REMOVED")
+df:RegisterEvent("LOOT_OPENED")
+df:RegisterEvent("LOOT_CLOSED")
+df:SetScript("OnEvent", function(_, event, arg1)
+    if event == "LOOT_OPENED" or event == "LOOT_CLOSED" then
+        -- Anchor the loot moment so subsequent quest transitions carry a
+        -- sinceLoot delta. Diff immediately — a cache loot that auto-credits
+        -- a hidden quest often lands in the same frame as LOOT_CLOSED.
+        lastLootAt   = time()
+        delveTrigger = event
+        DelveDiff()
+        -- The unlock flag can flip a beat AFTER the loot window closes with
+        -- no further event; re-diff once shortly after to catch that lag
+        -- while sinceLoot is still small.
+        if event == "LOOT_CLOSED" and C_Timer and C_Timer.After then
+            C_Timer.After(2, function()
+                if not DelveInScenario() then return end
+                delveTrigger = "post-loot+2s"
+                DelveDiff()
+                delveTrigger = "quest-log"
+            end)
+        end
+        delveTrigger = "quest-log"
+        return
+    elseif event == "QUEST_TURNED_IN" then
+        DelveEvent("turnedin", arg1)
+        delveTrigger = "QUEST_TURNED_IN:" .. tostring(arg1)
+    elseif event == "QUEST_ACCEPTED" then
+        DelveEvent("accepted", arg1)
+        delveTrigger = "QUEST_ACCEPTED:" .. tostring(arg1)
+    elseif event == "QUEST_REMOVED" then
+        DelveEvent("removed", arg1)
+        delveTrigger = "QUEST_REMOVED:" .. tostring(arg1)
+    else
+        -- QUEST_LOG_UPDATE / UNIT_QUEST_LOG_CHANGED fire in bursts; debounce
+        -- the heavy full-log walk to once a second. LOOT_CLOSED above forces
+        -- an undebounced diff, so the cache-loot moment is never missed.
+        if (time() - lastDelveWalkAt) < 1 then return end
+    end
+    lastDelveWalkAt = time()
+    DelveDiff()
+    delveTrigger = "quest-log"
+end)
+
+-- Polling backstop: the chest-unlock flag may change with NO event at all,
+-- so the event hooks above would never see it. A delve-gated ticker re-diffs
+-- on a tight cadence to catch silent transitions. Always-on (the in-delve
+-- gate is inside the callback) so it doesn't need start/stop on zone change.
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(DELVE_POLL_INTERVAL, function()
+        if not DelveInScenario() then return end
+        delveTrigger = "delve-ticker"
+        DelveDiff()
+        delveTrigger = "quest-log"
+    end)
+end
