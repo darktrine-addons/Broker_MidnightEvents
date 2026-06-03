@@ -497,8 +497,14 @@ SlashCmdList.BMEBEACON = function(msg)
         if Broker_MidnightEventsBeacon.delveLog then
             Broker_MidnightEventsBeacon.delveLog[CharKey()] = nil
         end
+        if Broker_MidnightEventsBeacon.scenarioLog then
+            Broker_MidnightEventsBeacon.scenarioLog[CharKey()] = nil
+        end
+        if Broker_MidnightEventsBeacon.lootLog then
+            Broker_MidnightEventsBeacon.lootLog[CharKey()] = nil
+        end
         lastState = {}
-        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data (incl. crest + delve logs).")
+        print("|cffffcc00MidnightEvents/BeaconHarvest|r cleared per-char data (incl. crest + delve + scenario + loot logs).")
         return
     end
     Sample()  -- force one sample now, even outside delve
@@ -962,3 +968,208 @@ if C_Timer and C_Timer.NewTicker then
         delveTrigger = "quest-log"
     end)
 end
+
+-- ── Scenario-criteria recorder (dev) ─────────────────────────────────────────
+-- 2026-06-03 result: using a Beacon + looting Nullaeus's cache produced ZERO
+-- quest signal — no tracked-flag flip (transitionCursor unchanged), no
+-- quest-log change, no quest event (delveLog stayed empty). Delve objectives
+-- and rewards are driven by SCENARIO CRITERIA (C_ScenarioInfo), not quests, so
+-- the quest recorders above are structurally blind to the chest-unlock. This
+-- records every scenario-criteria change (added / progress / complete) with the
+-- same sinceLoot correlation, so a "cache loot -> a criterion completes ->
+-- reward chest unlocks" chain becomes visible. SV: scenarioLog[char].
+local SCEN_RING        = 400
+local scenSnap         = nil   -- criteriaIndex -> { id, desc, quantity, total, completed }
+local scenTrigger      = "scenario"
+
+local function ScenWalk()
+    local snap = {}
+    if not (C_ScenarioInfo and C_ScenarioInfo.GetCriteriaInfo) then return snap end
+    for i = 1, 25 do
+        local c = C_ScenarioInfo.GetCriteriaInfo(i)
+        if not c then break end
+        snap[i] = {
+            id        = c.criteriaID,
+            desc      = c.description,
+            quantity  = c.quantity,
+            total     = c.totalQuantity,
+            completed = c.completed and true or false,
+        }
+    end
+    return snap
+end
+
+local function ScenPush(rec)
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    local root = Broker_MidnightEventsBeacon
+    root.scenarioLog = root.scenarioLog or {}
+    local key = CharKey()
+    local sl  = root.scenarioLog[key]
+    if not sl then sl = { ring = {}, cursor = 0, cap = SCEN_RING }; root.scenarioLog[key] = sl end
+    sl.cursor = sl.cursor + 1
+    if sl.cursor > sl.cap then sl.cursor = 1 end
+    sl.ring[sl.cursor] = rec
+end
+
+local function ScenStamp(kind, c, extra)
+    local rec = {
+        t         = time(),
+        kind      = kind,
+        id        = c and c.id,
+        desc      = c and c.desc,
+        quantity  = c and c.quantity,
+        total     = c and c.total,
+        completed = c and c.completed,
+        trigger   = scenTrigger,
+        sinceLoot = (lastLootAt > 0) and (time() - lastLootAt) or nil,
+        ctx       = InstanceContext(),
+    }
+    if extra then for k, v in pairs(extra) do rec[k] = v end end
+    ScenPush(rec)
+    print(string.format(
+        "|cffcc66ffMidnightEvents/Scenario|r %s %q  q=%s/%s done=%s%s [%s]",
+        kind, tostring(rec.desc), tostring(rec.quantity), tostring(rec.total),
+        tostring(rec.completed),
+        rec.sinceLoot and string.format(" (+%ds since loot)", rec.sinceLoot) or "",
+        scenTrigger))
+end
+
+local function ScenDiff()
+    local now = ScenWalk()
+    if scenSnap and DelveInScenario() then
+        for i, cur in pairs(now) do
+            local prev = scenSnap[i]
+            if not prev then
+                ScenStamp("added", cur)
+            elseif cur.completed and not prev.completed then
+                ScenStamp("complete", cur)
+            elseif cur.quantity ~= prev.quantity then
+                ScenStamp("progress", cur, { from = prev.quantity, to = cur.quantity })
+            end
+        end
+    end
+    scenSnap = now
+end
+
+local scf = CreateFrame("Frame")
+scf:RegisterEvent("SCENARIO_CRITERIA_UPDATE")
+scf:RegisterEvent("SCENARIO_UPDATE")
+scf:RegisterEvent("SCENARIO_POI_UPDATE")
+scf:RegisterEvent("CRITERIA_UPDATE")
+scf:RegisterEvent("LOOT_OPENED")
+scf:RegisterEvent("LOOT_CLOSED")
+scf:SetScript("OnEvent", function(_, event)
+    if event == "LOOT_OPENED" or event == "LOOT_CLOSED" then
+        -- Share the loot anchor (the delve recorder sets it too; idempotent)
+        -- and re-diff so a criterion that completes on the cache loot carries a
+        -- small sinceLoot. A second pass 2s later catches a lagged completion.
+        lastLootAt  = time()
+        scenTrigger = event
+        ScenDiff()
+        if event == "LOOT_CLOSED" and C_Timer and C_Timer.After then
+            C_Timer.After(2, function()
+                if not DelveInScenario() then return end
+                scenTrigger = "post-loot+2s"
+                ScenDiff()
+                scenTrigger = "scenario"
+            end)
+        end
+        scenTrigger = "scenario"
+        return
+    end
+    scenTrigger = event
+    ScenDiff()
+    scenTrigger = "scenario"
+end)
+
+-- Polling backstop for criteria that change with no event.
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(DELVE_POLL_INTERVAL, function()
+        if not DelveInScenario() then return end
+        scenTrigger = "scen-ticker"
+        ScenDiff()
+        scenTrigger = "scenario"
+    end)
+end
+
+-- ── Loot-source recorder (dev) ───────────────────────────────────────────────
+-- Identify WHICH container was looted (Nullaeus's cache, the end reward chest,
+-- …) by its GameObject ID, plus the items/currency it held. GetLootSourceInfo's
+-- GUID encodes the source GameObject (`GameObject-0-…-<objectID>-…`), so this
+-- directly answers "did I loot the cache, and what came out" — no quest or
+-- scenario flag required. Delve-gated. SV: lootLog[char].
+local LOOT_RING = 200
+
+-- Known delve container object IDs (Wowhead), for labelling the echo. The
+-- recorder works for ANY container by ID; these just make the cache obvious.
+local KNOWN_OBJECTS = {
+    [618495] = "Nullaeus Cache",   -- the nemesis cache (object=618495)
+}
+
+-- Returns (kind, objectID) from a unit/object GUID; objectID is field 6 for
+-- Creature/GameObject/Vehicle GUIDs. nil for Item/Player/other shapes.
+local function GUIDObjectID(guid)
+    if type(guid) ~= "string" then return nil, nil end
+    local kind, _, _, _, _, id = strsplit("-", guid)
+    return kind, tonumber(id)
+end
+
+local function LootPush(rec)
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    local root = Broker_MidnightEventsBeacon
+    root.lootLog = root.lootLog or {}
+    local key = CharKey()
+    local ll  = root.lootLog[key]
+    if not ll then ll = { ring = {}, cursor = 0, cap = LOOT_RING }; root.lootLog[key] = ll end
+    ll.cursor = ll.cursor + 1
+    if ll.cursor > ll.cap then ll.cursor = 1 end
+    ll.ring[ll.cursor] = rec
+end
+
+local lootF = CreateFrame("Frame")
+lootF:RegisterEvent("LOOT_OPENED")
+lootF:SetScript("OnEvent", function()
+    if not DelveInScenario() then return end  -- only care about in-delve containers
+    local n = (GetNumLootItems and GetNumLootItems()) or 0
+    local sources, items = {}, {}
+    for i = 1, n do
+        if GetLootSlotInfo then
+            -- icon, name, quantity, currencyID, quality, locked, isQuestItem, questID
+            local _, name, qty, currencyID = GetLootSlotInfo(i)
+            items[#items + 1] = {
+                name       = name,
+                qty        = qty,
+                currencyID = currencyID,
+                link       = GetLootSlotLink and GetLootSlotLink(i) or nil,
+            }
+        end
+        if GetLootSourceInfo then
+            -- A slot can have multiple (guid, quantity) source pairs.
+            local s = { GetLootSourceInfo(i) }
+            for j = 1, #s, 2 do
+                local kind, id = GUIDObjectID(s[j])
+                if id then sources[id] = kind end
+            end
+        end
+    end
+    local srcList = {}
+    for id, kind in pairs(sources) do srcList[#srcList + 1] = { id = id, kind = kind } end
+    LootPush({ t = time(), sources = srcList, items = items, ctx = InstanceContext() })
+
+    local srcStr = {}
+    for _, sv in ipairs(srcList) do
+        local label = KNOWN_OBJECTS[sv.id]
+        srcStr[#srcStr + 1] = label
+            and (label .. " [" .. sv.kind .. ":" .. sv.id .. "]")
+            or (sv.kind .. ":" .. sv.id)
+    end
+    local itemStr = {}
+    for _, it in ipairs(items) do
+        itemStr[#itemStr + 1] = tostring(it.name)
+            .. (it.currencyID and (" (cur " .. it.currencyID .. ")") or "")
+    end
+    print(string.format(
+        "|cff66ff99MidnightEvents/Loot|r from {%s}: %s",
+        table.concat(srcStr, ", "),
+        (#itemStr > 0) and table.concat(itemStr, ", ") or "(empty)"))
+end)
