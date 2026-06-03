@@ -2,5 +2,15 @@ package-as: Broker_MidnightEvents
 
 enable-nolib-creation: no
 
+# Curated per-release notes posted verbatim to CurseForge / Wago. RELEASE.md
+# holds ONLY the current version (+ links); the packager uploads it whole, so
+# the published changelog stays scoped to this release. Full history lives in
+# CHANGELOG.md. RELEASE.md is ignored below so it doesn't ship in the zip — the
+# packager still reads it from the checkout for the changelog upload.
+manual-changelog:
+    filename: RELEASE.md
+    markup-type: markdown
+
 ignore:
     - design
+    - RELEASE.md

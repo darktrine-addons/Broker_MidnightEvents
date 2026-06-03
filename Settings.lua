@@ -19,6 +19,7 @@ local defaults = {
         alts      = true,
     },
     showWorldBosses = true,
+    showMinimapButton = true,  -- on by default; users with a broker bar can opt out
     broker = {
         showProgress = true,   -- "Weeklies N/M" / "All done" left-side chunk
         showEvent    = true,   -- "Stormarion 12m next" / "Abundance now!" tag
@@ -74,6 +75,7 @@ sf:SetScript("OnEvent", function(self, event, name)
     end
 
     if db.showWorldBosses == nil then db.showWorldBosses = defaults.showWorldBosses end
+    if db.showMinimapButton == nil then db.showMinimapButton = defaults.showMinimapButton end
 
     db.broker = db.broker or {}
     for k, v in pairs(defaults.broker) do
@@ -213,10 +215,17 @@ sf:SetScript("OnEvent", function(self, event, name)
         end
     end
 
-    -- Register minimap button (LibDBIcon manages show/hide via right-click menu).
+    -- Register minimap button. The "Show minimap button" checkbox
+    -- (db.showMinimapButton) is authoritative over visibility; sync it into
+    -- LibDBIcon's persistent hide flag before registering so the user's
+    -- choice applies at load. (LibDBIcon owns the db.minimapIcon table for
+    -- icon position too; we only drive the hide field. Our broker OnClick
+    -- overrides the icon's right-click to open this panel, so there is no
+    -- built-in LibDBIcon hide menu — the checkbox is the control.)
+    db.minimapIcon.hide = not db.showMinimapButton
     local LibDBIcon = LibStub("LibDBIcon-1.0", true)
     if LibDBIcon and ns.broker then
-        LibDBIcon:Register("Broker_MidnightEvents", ns.broker, db.minimapIcon)
+        LibDBIcon:Register(addonName, ns.broker, db.minimapIcon)
     end
 
     -- ── Settings panel ────────────────────────────────────────────────────────
@@ -275,6 +284,33 @@ sf:SetScript("OnEvent", function(self, event, name)
     brokerEventSetting:SetValueChangedCallback(RefreshUI)
     Settings.CreateCheckbox(category, brokerEventSetting,
         "Append the next-firing event (e.g. \"Abundance in 23m\") to the broker bar text.")
+
+    -- Section: Minimap button
+    Settings.RegisterInitializer(category,
+        CreateSettingsListSectionHeaderInitializer("Minimap button", nil))
+
+    -- "Show minimap button" is authoritative; the callback mirrors it into
+    -- LibDBIcon's hide flag (the inverse) and drives Show/Hide so toggling
+    -- takes effect immediately without a /reload. On by default; matches the
+    -- pattern in Broker_NosyKeys / Broker_PlayerCoords for consistency.
+    local showMinimapSetting = Settings.RegisterAddOnSetting(
+        category, addonName .. "_showMinimapButton", "showMinimapButton", db,
+        Settings.VarType.Boolean, "Show minimap button",
+        defaults.showMinimapButton)
+    showMinimapSetting:SetValueChangedCallback(function()
+        db.minimapIcon.hide = not db.showMinimapButton
+        local LDBIcon = LibStub("LibDBIcon-1.0", true)
+        if not LDBIcon then return end
+        if db.showMinimapButton then
+            LDBIcon:Show(addonName)
+        else
+            LDBIcon:Hide(addonName)
+        end
+    end)
+    Settings.CreateCheckbox(category, showMinimapSetting,
+        "Show the broker's minimap button. On by default. Users who surface "
+        .. "Midnight Events on a broker bar (Bazooka, TitanPanel, ElvUI, etc.) "
+        .. "often turn this off to keep the minimap edge clear.")
 
     -- Section: Alts panel
     Settings.RegisterInitializer(category,
