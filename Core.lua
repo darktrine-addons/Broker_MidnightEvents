@@ -311,6 +311,15 @@ local function RefreshProgressCache()
                 ns.char.voidforge[entry.key] = {
                     value = v, max = m, seenAt = time(),
                 }
+                -- Publish the season cap account-wide so alts that haven't
+                -- visited Decimus this week can borrow it (the cap is the
+                -- same warband-wide). Last-write-wins by sampledAt; a fresh
+                -- sample is always the newest, and the cap only rises, so the
+                -- most recent sample is authoritative.
+                if entry.scope == "seasonCap" and ns.db then
+                    ns.db.voidforgeSeason = ns.db.voidforgeSeason or {}
+                    ns.db.voidforgeSeason[entry.key] = { max = m, sampledAt = time() }
+                end
             end
         end
     end
@@ -1484,13 +1493,25 @@ local function BuildTooltip()
                     if r.entry.hint then
                         label = label .. " |cff707070(" .. r.entry.hint .. ")|r"
                     end
-                    -- seasonCap rows post-reset: value carried over but the
-                    -- cap rose and hasn't been re-synced from Decimus yet, so
-                    -- show the unknown denominator and flag the prompt below.
+                    -- seasonCap rows post-reset: this char's value carried
+                    -- over but the cap rose and hasn't been re-synced from
+                    -- Decimus on THIS character yet. The cap is warband-wide,
+                    -- so borrow it from any alt that sampled it this week
+                    -- (account-wide store, gated on sampledAt >= this week's
+                    -- reset so a pre-reset cap can't mislead). Only fall back
+                    -- to "??" + the prompt when no alt has synced it either.
                     local valueStr
                     if r.p.maxStale then
-                        valueStr   = r.p.value .. "/??"
-                        anyMaxStale = true
+                        local shared = ns.db and ns.db.voidforgeSeason
+                                       and ns.db.voidforgeSeason[r.entry.key]
+                        local boundary = ns.char and ns.char.weeklyReset
+                        if shared and shared.max and shared.sampledAt
+                           and (not boundary or shared.sampledAt >= boundary) then
+                            valueStr = r.p.value .. "/" .. shared.max
+                        else
+                            valueStr   = r.p.value .. "/??"
+                            anyMaxStale = true
+                        end
                     else
                         valueStr = r.p.value .. "/" .. r.p.max
                     end
@@ -1686,6 +1707,53 @@ crestFrame:SetScript("OnEvent", function(_, _, currencyType, quantity, quantityC
     if not (cd and cd.validSince == currentReset and currentReset > 0) then return end
     local cap = ns.mythCrestWeeklyCap or 20
     cd.count = math.min((cd.count or 0) + quantityChange, cap)
+    UpdateBrokerText()
+    if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
+        BuildTooltip()
+    end
+    if ns.AltsPanel and ns.AltsPanel.RefreshIfShown then
+        ns.AltsPanel.RefreshIfShown()
+    end
+end)
+
+-- ── Beacon of Hope weekly (Nullaeus Cache loot) ─────────────────────────────
+-- The per-character Beacon weekly has NO quest flag or scenario criterion
+-- (verified 2026-06-03 across quest/scenario/loot harvests). The only signal
+-- is looting the Nullaeus Cache container, identified by its GameObject ID.
+-- GetLootSourceInfo's GUID encodes the source object; reading it on LOOT_OPENED
+-- is read-only and taint-safe. Set a per-char weekly flag when the cache is
+-- seen; Settings clears it at the weekly reset. Data's delversBounty.customDone
+-- reads the flag.
+local NULLAEUS_CACHE_OBJECT_ID = 618495
+
+local function LootHasObject(objectID)
+    if not (GetLootSourceInfo and GetNumLootItems) then return false end
+    for slot = 1, GetNumLootItems() do
+        local sources = { GetLootSourceInfo(slot) }
+        -- GetLootSourceInfo returns (guid, quantity) pairs; a slot may have many.
+        for j = 1, #sources, 2 do
+            local guid = sources[j]
+            if type(guid) == "string" then
+                local kind, _, _, _, _, id = strsplit("-", guid)
+                if (kind == "GameObject" or kind == "Vehicle")
+                   and tonumber(id) == objectID then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local bountyFrame = CreateFrame("Frame")
+bountyFrame:RegisterEvent("LOOT_OPENED")
+bountyFrame:SetScript("OnEvent", function()
+    if not ns.char then return end
+    ns.char.delveBounty = ns.char.delveBounty or { cacheLooted = false }
+    if ns.char.delveBounty.cacheLooted then return end  -- already done this week
+    if not LootHasObject(NULLAEUS_CACHE_OBJECT_ID) then return end
+    ns.char.delveBounty.cacheLooted = true
+    RefreshWeeklies()  -- recompute the row's done-state from customDone now
     UpdateBrokerText()
     if tooltipOwner and Tooltip:IsOwned(tooltipOwner) then
         BuildTooltip()

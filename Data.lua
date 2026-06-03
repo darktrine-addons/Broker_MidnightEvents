@@ -302,17 +302,23 @@ ns.weeklies = {
     { key = "gnawingVoid",   questID = 93784, label = "Gnawing Curiosity", short = "GnawC",
       hint = "warband first delve T4+" },
 
-    -- Delver's Bounty weekly. The Beacon of Hope → Nullaeus → Delver's
-    -- Bounty → Hidden Trove chain. 91190 turned out to track POSSESSION
-    -- (true = holding an unconsumed bounty), not completion — so keying
-    -- the done-state on it is backwards (shows ✓ while holding a bounty,
-    -- ✗ after consuming it = actually completing). Until the consume-edge
-    -- model is confirmed (one solo Beacon run with a deliberate loot→
-    -- consume gap), `comingSoon` renders the row greyed with "coming soon"
-    -- instead of a wrong ✓/✗. Re-enable by dropping comingSoon once wired.
-    -- See memory: brokermidnightevents-beacon-of-hope-untrackable
-    { key = "delversBounty", questID = 91190, label = "Delver's Bounty", short = "DBnty",
-      hint = "Beacon of Hope", comingSoon = true },
+    -- Beacon of Hope weekly. SOLVED 2026-06-03: the per-character weekly is
+    -- "loot the Nullaeus Cache" (the nemesis cache you get after using a
+    -- Beacon of Hope to summon Nullaeus in a delve). There is NO quest flag
+    -- or scenario criterion for it (verified across quest/scenario/loot
+    -- harvests) — the only signal is looting the cache container, identified
+    -- by its GameObject ID 618495. A LOOT_OPENED hook in Core sets
+    -- char.delveBounty.cacheLooted (cleared at the weekly reset); customDone
+    -- reads it. (91190 was a red herring — per-delve reward-chest plumbing.
+    -- The Trovehunter's Bounty → Hidden Trove chain has no weekly lockout, so
+    -- it is intentionally NOT tracked.) See memory:
+    -- brokermidnightevents-beacon-of-hope-untrackable.
+    { key = "delversBounty", label = "Beacon of Hope", short = "Beacon",
+      hint = "Nullaeus Cache",
+      customDone = function()
+          return (ns.char and ns.char.delveBounty and ns.char.delveBounty.cacheLooted)
+                 and true or false
+      end },
 
     -- Arcantina — Khadgar's patron-tavern hub (unlocked via Arator's
     -- Journey campaign chapter + Personal Key toy). Weekly visit slot

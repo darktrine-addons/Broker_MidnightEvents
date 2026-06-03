@@ -53,6 +53,12 @@ sf:SetScript("OnEvent", function(self, event, name)
     local db = Broker_MidnightEventsDB
     db.minimapIcon = db.minimapIcon or { hide = false }  -- managed by LibDBIcon
     db.chars       = db.chars       or {}
+    -- Account-wide (warband) store for season-cap denominators. The Voidforge
+    -- season cap is identical across every character, so any alt that has
+    -- sampled it at Decimus can supply it to alts that haven't. Keyed by
+    -- charProgress entry key → { max, sampledAt }; last-write-wins by sampledAt.
+    -- See the seasonCap fallback in Core's Voidforge render.
+    db.voidforgeSeason = db.voidforgeSeason or {}
 
     -- Phase 2 migration: per-event toggles and "hide distant" are gone now
     -- that the Events surface is C_EventScheduler-driven (Blizzard's own
@@ -99,6 +105,10 @@ sf:SetScript("OnEvent", function(self, event, name)
     -- below), so a mid-week install greys the row instead of showing a
     -- partial count. See the reset block + Core's CURRENCY hook.
     char.crestDelve      = char.crestDelve  or { count = 0 }
+    -- Beacon of Hope weekly: did this char loot a Nullaeus Cache this week?
+    -- Set by Core's LOOT_OPENED hook (GameObject 618495), cleared at the
+    -- weekly reset below.
+    char.delveBounty     = char.delveBounty or { cacheLooted = false }
 
     -- Class is stable per char (race+faction changes leave it intact); record
     -- it once at login so the Alts detail panel can color names without
@@ -213,6 +223,12 @@ sf:SetScript("OnEvent", function(self, event, name)
         if priorReset and priorReset > 0 then
             char.crestDelve.validSince = currentReset
         end
+        -- Beacon of Hope weekly: clear the Nullaeus Cache loot flag so the
+        -- row reopens for the new week. (Unlike the crest counter this needs
+        -- no validSince gate — it's a binary "looted yet this week", correct
+        -- as false on a fresh/mid-week install too.)
+        char.delveBounty = char.delveBounty or { cacheLooted = false }
+        char.delveBounty.cacheLooted = false
     end
 
     -- Register minimap button. The "Show minimap button" checkbox
