@@ -121,7 +121,7 @@ The addon reads several values Blizzard's 12.x runtime treats as *secret* (widge
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome on [github](https://github.com/darktrine-addons/Broker_MidnightEvents/)
 
 ## License
 
