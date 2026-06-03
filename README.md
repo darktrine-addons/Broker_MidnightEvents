@@ -129,4 +129,4 @@ Licensed under [GPL-2.0](https://www.gnu.org/licenses/gpl-2.0.html). The full li
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for the full version history. The notes for each release are also posted with the download on CurseForge and Wago.
+See [CHANGELOG.md](https://github.com/darktrine-addons/Broker_MidnightEvents/blob/main/CHANGELOG.md) for the full version history. The notes for each release are also posted with the download on CurseForge and Wago.
