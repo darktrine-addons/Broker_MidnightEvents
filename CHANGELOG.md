@@ -3,6 +3,11 @@
 User-facing changes, newest first. Internal and dev-tooling work lives in the
 git history, not here.
 
+## [v1.0.2](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.2) — 2026-06-03
+
+- feat: new **Beacon of Hope (Nullaeus Cache)** weekly row — ticks ✓ once you loot a Nullaeus Cache (the nemesis cache from a Beacon of Hope delve run), and resets each week. Replaces the old "coming soon" placeholder.
+- fix: **Voidcores transmuted** no longer shows `NN/??` on characters that haven't visited Decimus yet this week — it borrows the season cap from any of your characters who have, so the number is right warband-wide.
+
 ## [v1.0.1](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.1) — 2026-06-03
 
 - feat: optional **Show minimap button** toggle in Settings — hide the minimap icon if you run a broker bar (Bazooka, TitanPanel, ElvUI, …). On by default.
