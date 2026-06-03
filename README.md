@@ -21,7 +21,7 @@ Retail only. Requires Midnight (Interface 120005+). Works with any LibDataBroker
 
 **Probably not** — if you:
 
-- Want a comprehensive checklist of *every* weekly (Patron Orders, professions, housing, M+, vault breakdown). Use [Midnight Routine](https://www.curseforge.com/wow/addons/midnight-routine) for that breadth; this addon is intentionally focused on **events and the weeklies tied to them**, designed to coexist
+- Want a comprehensive checklist of *every* weekly (Patron Orders, professions, housing, M+, vault breakdown). Use Midnight Routine([Curseforge](https://www.curseforge.com/wow/addons/midnight-routine)|[Wago](https://addons.wago.io/addons/QN53j5KB|[GH](https://github.com/LoyalFTW/Midnight-Routine/releases)) for that breadth; this addon is intentionally focused on **events and the weeklies tied to them**, designed to coexist
 - Want a separate always-visible window per activity (this is a single hover tooltip)
 - Run only Classic / non-retail
 
