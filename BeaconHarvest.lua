@@ -1,24 +1,58 @@
 -- Broker_MidnightEvents - BeaconHarvest
--- Development-only module (#@debug@ in TOC). Targeted harvest for the
--- Beacon of Hope / Delver's Bounty weekly lockout investigation.
+-- Development-only module (#@debug@ in TOC). Investigation harness for
+-- Midnight delve/weekly quest-ID hunts.
 --
--- Hypothesis (2026-05-26): quest 91190 is the Beacon completion flag.
--- 92799 is co-observed but appears non-Beacon-specific. Confirmation
--- requires post-weekly-reset behaviour (91190 must flip false).
+-- STATUS: RETIRED (2026-06-03). The Beacon-of-Hope weekly riddle is solved and
+-- shipped (v1.0.2) — the weekly is "loot the Nullaeus Cache" (GameObject
+-- 618495), detected in production by a LOOT_OPENED hook in Core. The heavy
+-- recorders below (flag sampler, item-use correlation, crest probes, and the
+-- delve / scenario / loot-source recorders) proved the negative and have done
+-- their job, so they are disabled via `ENABLED = false`. The code is kept
+-- intact, NOT deleted, so a future ID hunt just flips ENABLED = true and
+-- retargets TRACKED_QUEST_IDS / the object IDs — nothing to reconstruct from
+-- git history. Dumps live under SavedVariables key Broker_MidnightEventsBeacon.
 --
--- This module passively samples both flags every 60s while the player
--- is inside a scenario instance (delves are scenario-typed), captures
--- every transition (false→true), and writes to a separate SavedVariable
--- so we don't need to remember /mediag at the right moment.
---
--- Inspect:  WTF/Account/<ID>/SavedVariables/Broker_MidnightEvents.lua
---           key: Broker_MidnightEventsBeacon
+-- The ONE always-on facility (kept ABOVE the kill-switch so it survives the
+-- harness being disabled): a lean Arena bonus-event ID catcher.
 -- Copyright (C) 2026 artherion77
 -- Licensed under the GNU General Public License v2.0 - see LICENSE.
 
 local addonName, ns = ...
 
-local ENABLED = true
+-- ── Arena bonus-event ID catcher (lean, always-on) ──────────────────────────
+-- The Bonus Event Weekly pool still lacks the Midnight ID for the ARENA
+-- variant (83358 is the TWW quest, held out of Data.lua over cross-expansion
+-- risk). It only appears during an Arena bonus week — easy to miss — so this
+-- watches every QUEST_ACCEPTED for an Arena/Conquest-titled quest, echoes it
+-- loudly, and records it, so the ID is captured without remembering to turn a
+-- harness on. Deliberately ABOVE the ENABLED kill-switch. Cost: a couple of
+-- string.find calls per quest accept.
+local ARENA_HINTS = { "Arena", "Conquest" }
+local arenaCatcher = CreateFrame("Frame")
+arenaCatcher:RegisterEvent("QUEST_ACCEPTED")
+arenaCatcher:SetScript("OnEvent", function(_, _, questID)
+    if type(questID) ~= "number" then return end
+    local title = C_QuestLog and C_QuestLog.GetTitleForQuestID
+                  and C_QuestLog.GetTitleForQuestID(questID)
+    if not title then return end
+    local hit = false
+    for _, p in ipairs(ARENA_HINTS) do
+        if title:find(p, 1, true) then hit = true; break end
+    end
+    if not hit then return end
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    Broker_MidnightEventsBeacon.arenaCatch = Broker_MidnightEventsBeacon.arenaCatch or {}
+    Broker_MidnightEventsBeacon.arenaCatch[tostring(questID)] = {
+        questID = questID, title = title, t = time(),
+        char = (GetRealmName() or "?") .. "/" .. (UnitName("player") or "?"),
+    }
+    print(string.format(
+        "|cffffcc00MidnightEvents/Arena|r possible Arena bonus-event quest %d %q "
+        .. "— record this ID for the Bonus Event pool (Data.lua).", questID, title))
+end)
+
+-- ── Investigation harness (RETIRED — flip to true + retarget IDs to revive) ──
+local ENABLED = false
 if not ENABLED then return end
 
 -- Quests under investigation. Add IDs here when a new "what triggers
@@ -27,8 +61,11 @@ if not ENABLED then return end
 -- QUEST_REMOVED event, and records every false→true (and true→false)
 -- transition with the instance context at the moment of the flip.
 local TRACKED_QUEST_IDS = {
-    91190,  -- Delver's Bounty / Hidden Trove (confirmed weekly)
-    92799,  -- co-observed during Beacon harvest (lifetime/account flag, kept as control)
+    91190,  -- per-delve reward-chest plumbing (NOT the weekly; weekly = looting
+            --   Nullaeus Cache 618495, handled in Core). Kept for reference.
+    92799,  -- "A Nightmarish Task" nightmare-hunt ACTIVE flag: true on accepting
+            --   hunt 91263, false on turn-in (corrected 2026-06-03 — it is NOT a
+            --   lifetime/account flag; nothing to do with Beacons).
     93767,  -- Arcantina weekly visit — credit trigger unknown; flips from
             --   apparently unrelated activity (world boss, Liadrin's weekly).
             --   Goal: identify what flipped it via correlated transitions.
