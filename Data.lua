@@ -209,7 +209,9 @@ ns.weeklies = {
     -- rest as the player engages — pool not in the row schema yet because
     -- we don't have enough IDs to render a stable X/N count.
     { key = "soiree", label = "Saltheril's Soiree", short = "Soir",
-      levelMin = 90,
+      -- No level gate: Saltheril's Soiree is playable sub-90 and its access is
+      -- warband-wide (all characters see the event on the map once any char
+      -- unlocks it), so the earlier levelMin=90 wrongly hid it on low alts.
       questIDs = {
           89289,  -- Favor of the Court (weekly pick)
           90573,  -- Fortify the Runestones: Magisters
