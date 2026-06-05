@@ -82,8 +82,11 @@ SLASH_MEPREREQ1 = "/meprereq"
 SlashCmdList.MEPREREQ = function()
     local char = (GetRealmName() or "?") .. "/" .. (UnitName("player") or "?")
     Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    -- Key by character so dumping on several alts accumulates (the whole point
+    -- is comparing per-char vs account-wide flag scope).
+    Broker_MidnightEventsBeacon.prereqProbe = Broker_MidnightEventsBeacon.prereqProbe or {}
     local probe = { char = char, t = time(), quests = {}, factions = {} }
-    Broker_MidnightEventsBeacon.prereqProbe = probe
+    Broker_MidnightEventsBeacon.prereqProbe[char] = probe
     print("|cffffcc00MidnightEvents/Prereq|r " .. char)
     print("  -- unlock quests (IsQuestFlaggedCompleted; warband-wide once done) --")
     for id, label in pairs(PREREQ_QUESTS) do
