@@ -51,6 +51,64 @@ arenaCatcher:SetScript("OnEvent", function(_, _, questID)
         .. "— record this ID for the Bonus Event pool (Data.lua).", questID, title))
 end)
 
+-- ── Prerequisite probe (lean, always-on) — for issue #1 ─────────────────────
+-- Midnight unlock quests AND renown are WARBAND-WIDE: once any character
+-- completes an unlock, IsQuestFlaggedCompleted reads true for every char, so we
+-- can't observe these quests being accepted fresh — only VALIDATE candidate IDs
+-- (found on Wowhead) by confirming they read true on the account. `/meprereq`
+-- dumps, for the current char: (1) IsQuestFlaggedCompleted for each candidate
+-- unlock quest, and (2) C_MajorFactions.GetMajorFactionData (name + renownLevel)
+-- for each Midnight faction ID — which also confirms whether the reputation
+-- faction IDs are the same numbers the C_MajorFactions API expects. Add IDs to
+-- PREREQ_QUESTS as Wowhead research turns up the unknowns.
+local PREREQ_QUESTS = {
+    [93932] = "Legends of the Haranir unlock (Legendary Prosperity, Hara'ti R8)",
+    [91627] = "Saltheril's Soiree unlock (Saltheril's Haven)",
+    [95268] = "Voidforge unlock",
+    -- TODO (IDs unknown — fill from Wowhead, then validate here):
+    --   Arcantina unlock ("The Arcantina", Kurdran Wildhammer / Arator's Journey)
+    --   Prey Hunts unlock (Voidstorm campaign → Astalor Bloodsworn)
+    --   Void Assault intro (Void Strike from Ranger Captain Lilatha)
+}
+-- Midnight renown/major factions (Wowhead reputation IDs; the probe confirms
+-- whether C_MajorFactions accepts the same number).
+local PREREQ_FACTIONS = {
+    [2704] = "Hara'ti",
+    [2710] = "Silvermoon Court",
+    [2696] = "Amani Tribe",
+    [2699] = "The Singularity",
+}
+SLASH_MEPREREQ1 = "/meprereq"
+SlashCmdList.MEPREREQ = function()
+    local char = (GetRealmName() or "?") .. "/" .. (UnitName("player") or "?")
+    Broker_MidnightEventsBeacon = Broker_MidnightEventsBeacon or {}
+    local probe = { char = char, t = time(), quests = {}, factions = {} }
+    Broker_MidnightEventsBeacon.prereqProbe = probe
+    print("|cffffcc00MidnightEvents/Prereq|r " .. char)
+    print("  -- unlock quests (IsQuestFlaggedCompleted; warband-wide once done) --")
+    for id, label in pairs(PREREQ_QUESTS) do
+        local done = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
+                     and C_QuestLog.IsQuestFlaggedCompleted(id) or false
+        probe.quests[tostring(id)] = done
+        print(string.format("    quest %d  flagged=%s  (%s)", id, tostring(done), label))
+    end
+    print("  -- renown (C_MajorFactions.GetMajorFactionData) --")
+    for id, label in pairs(PREREQ_FACTIONS) do
+        local d = C_MajorFactions and C_MajorFactions.GetMajorFactionData
+                  and C_MajorFactions.GetMajorFactionData(id)
+        if d then
+            probe.factions[tostring(id)] = { name = d.name, renown = d.renownLevel }
+            print(string.format("    faction %d  %q  renown=%s  (expected %s)",
+                id, tostring(d.name), tostring(d.renownLevel), label))
+        else
+            probe.factions[tostring(id)] = false
+            print(string.format("    faction %d  NO DATA — wrong ID for C_MajorFactions?  (expected %s)",
+                id, label))
+        end
+    end
+    print("|cffffcc00  saved to|r Broker_MidnightEventsBeacon.prereqProbe (run /reload to flush)")
+end
+
 -- ── Investigation harness (RETIRED — flip to true + retarget IDs to revive) ──
 local ENABLED = false
 if not ENABLED then return end
