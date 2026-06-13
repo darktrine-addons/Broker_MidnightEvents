@@ -95,12 +95,10 @@ ns.weeklies = {
     -- Conquest for PvP). Giver: Archmage Aethas Sunreaver (NPC 256212) in
     -- Silvermoon. Each event is its own weekly quest with a distinct title.
     --
-    -- Enumerated via Wowhead 2026-06-03 — 6 of 7 mapped. The 7th, Arena
-    -- Skirmishes ("The Arena Calls"), appears to REUSE the cross-expansion
-    -- TWW quest 83358 rather than mint a Midnight 935xx ID. NOT added: a
-    -- TWW quest may be lifetime-flagged from old Arena play and would
-    -- false-positive this row as done. Harvest the real Midnight ID via
-    -- GetQuestID() on Aethas's dialog during an Arena bonus week.
+    -- All 7 mapped. The 7th, Arena Skirmishes ("The Arena Calls"), turned out
+    -- to be a freshly-minted Midnight quest 93600 (freq=2 weekly), NOT the
+    -- cross-expansion TWW 83358 we feared — so no lifetime-flag false-positive
+    -- risk. ID captured in-game during an Arena bonus week (quest-accept catcher).
     { key = "bonusEvent", label = "Bonus Event Weekly", short = "BonusW",
       levelMin = 90,
       questIDs = {
@@ -110,8 +108,7 @@ ns.weeklies = {
           93599,  -- The Very Best (Pet Battle)
           93605,  -- The World Awaits (World Quests)
           93614,  -- A Fel Path Through Time (5 Timewalking dungeons)
-          -- 83358 Arena ("The Arena Calls") held — cross-expansion TWW ID,
-          -- false-positive risk; harvest the Midnight ID in an Arena week.
+          93600,  -- The Arena Calls (Arena Skirmishes) — Midnight ID, freq=2
       },
       picks = {
           [93593] = "Battle",
@@ -120,6 +117,7 @@ ns.weeklies = {
           [93599] = "Pet Battles",
           [93605] = "World Quests",
           [93614] = "Timewalking",
+          [93600] = "Arena",
       },
     },
 
