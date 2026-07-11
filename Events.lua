@@ -20,8 +20,7 @@ local DEFAULT_CONTINENT_ID = 2537
 local CONTINENT_TYPE = (Enum and Enum.UIMapType and Enum.UIMapType.Continent) or 2
 
 -- Per-zone uiMapIDs used to warm POI metadata at login (see WarmZonePois).
--- Same set as Data.lua's harvest zones — kept inline here so Events.lua has
--- no dependency on the harvest code path (which is dev-only).
+-- The Midnight continent's zones.
 local MIDNIGHT_ZONES = { 2395, 2405, 2413, 2437, 2424, 2393 }
 
 local state = {
@@ -358,21 +357,15 @@ local function Refresh()
         end
     end
 
-    -- 2. Scheduler scheduled → upcoming. /mediag dump cross-checked against
-    --    the in-game map (2026-05-14) resolved a long-standing ambiguity:
-    --    each scheduler-scheduled entry's endTime IS the variant's next
-    --    fire time. startTime is a pre-fire "schedule lock-in" timestamp
-    --    that can be in the past — past-startTime entries are NOT
-    --    currently firing (verified: scheduler entry [2] poi=8525 Skinning
-    --    Den had past startTime + future endTime, but the only Abundance
-    --    POI visible on any map was Herbalism Grotto, AND that map POI's
-    --    secondsLeft expired at exactly the same moment as entry [2]'s
-    --    endTime). The variant currently firing comes through the
-    --    map-event scan below. Scheduler-scheduled is upcoming only.
+    -- 2. Scheduler scheduled → upcoming. Each scheduler-scheduled entry's
+    --    endTime IS the variant's next fire time; startTime is a pre-fire
+    --    "schedule lock-in" that can be in the past, so a past-startTime entry
+    --    is NOT currently firing (the firing variant comes through the
+    --    map-event scan below). Scheduler-scheduled is upcoming only.
     --
     --    Filter by endTime > now (any future fire — past-startTime is OK).
-    --    Sort by endTime ascending so the renderer can use endTime - now
-    --    as the "in X" countdown. Matches the Blizz events panel ordering.
+    --    Sort by endTime ascending so the renderer can use endTime - now as
+    --    the "in X" countdown. Matches the Blizzard events panel ordering.
     local rawScheduled = C_EventScheduler.GetScheduledEvents
                          and C_EventScheduler.GetScheduledEvents() or {}
     for _, ev in ipairs(rawScheduled) do
@@ -472,9 +465,8 @@ local function Refresh()
         end
     end
 
-    -- Sort by endTime ascending (= fire time ascending). See the
-    -- scheduler-scheduled processing block for the endTime-is-fire-time
-    -- discovery.
+    -- Sort by endTime ascending (= fire time ascending; see the
+    -- scheduler-scheduled block above for why endTime is the fire time).
     table.sort(state.upcoming, function(a, b)
         return (a.endTime or 0) < (b.endTime or 0)
     end)

@@ -1,7 +1,6 @@
 -- Broker_MidnightEvents - Data
 -- Midnight-specific definitions: zones, events, schedules, quest IDs. Edit
 -- this file (and only this file) to add or update content for new patches.
--- Provenance and harvest history live in design/harvest-notes.md.
 -- Copyright (C) 2026 artherion77
 -- Licensed under the GNU General Public License v2.0 - see LICENSE.
 
@@ -42,21 +41,16 @@ ns.weeklies = {
     { key = "preyNightmare", questID = 94446, label = "A Nightmarish Task",  short = "NightT",
       hint = "Prey Hunts", objectiveRequired = 3, levelMin = 90 },
 
-    -- Lady Liadrin's "Unity against the Void" choice pool. She offers 4
-    -- of the pool per char per week; completing one flags ALL members
-    -- (lockout) and the weekly reset clears them all (verified 2026-06-03
-    -- — NOT lifetime accumulation; see memory wow-isquestflaggedcompleted-
-    -- lifetime). All freq=3, reward Spark of Radiance + Apex Cache. The
-    -- `picks` map drives Core's DetectWeeklyPicks active-log scan + the
-    -- "(<choice> picked)" annotation.
+    -- Lady Liadrin's "Unity against the Void" choice pool. She offers 4 of the
+    -- pool per char per week; completing one flags ALL members (lockout) and
+    -- the weekly reset clears them all (not lifetime accumulation). All freq=3,
+    -- reward Spark of Radiance + Apex Cache. The `picks` map drives Core's
+    -- DetectWeeklyPicks active-log scan and the "(<choice> picked)" annotation.
     --
-    -- Pool enumerated to 12 via Wowhead + Warcraft Wiki (meta quest 93744
-    -- "Unity Against the Void") 2026-06-03. 93766/93891/93913 were missing
-    -- from the original 9. 93891 "Legends of the Haranir" is flagged
-    -- obsolete on Wowhead — included (additive-safe; pool resets weekly so
-    -- a stale flag can't false-positive permanently) but unverified live.
-    -- No Raid/M+/Professions member surfaced; harvest if a future week
-    -- offers a choice not in this map.
+    -- 12 known members (meta quest 93744 "Unity Against the Void"). 93891
+    -- "Legends of the Haranir" is flagged obsolete on Wowhead but kept —
+    -- additive-safe, since the pool resets weekly so a stale flag can't
+    -- false-positive permanently. Add any future choice not in this map.
     { key = "liadrin", label = "Lady Liadrin's Weekly", short = "LiadW",
       levelMin = 90,
       questIDs = {
@@ -95,10 +89,9 @@ ns.weeklies = {
     -- Conquest for PvP). Giver: Archmage Aethas Sunreaver (NPC 256212) in
     -- Silvermoon. Each event is its own weekly quest with a distinct title.
     --
-    -- All 7 mapped. The 7th, Arena Skirmishes ("The Arena Calls"), turned out
-    -- to be a freshly-minted Midnight quest 93600 (freq=2 weekly), NOT the
-    -- cross-expansion TWW 83358 we feared — so no lifetime-flag false-positive
-    -- risk. ID captured in-game during an Arena bonus week (quest-accept catcher).
+    -- All 7 mapped. The 7th, Arena Skirmishes ("The Arena Calls"), is a Midnight
+    -- quest (93600, freq=2 weekly), not the cross-expansion TWW 83358, so there's
+    -- no lifetime-flag false-positive risk.
     { key = "bonusEvent", label = "Bonus Event Weekly", short = "BonusW",
       levelMin = 90,
       questIDs = {
@@ -127,9 +120,9 @@ ns.weeklies = {
     -- at any difficulty (Follower included). Reward: gold + a player-
     -- choice 1,000 reputation token (Hara'ti / Singularity / Silvermoon
     -- Court / Amani). Independent of the M+ Awakened/affix rotation.
-    -- Quest IDs verified via Wowhead 2026-05-26; pool is contiguous
-    -- 93751–93758. `picksFormat = "zoneOnly"` renders the row as
-    -- "Featured Dungeon (Voidscar Arena)" — same shape as Void Assault.
+    -- Quest IDs are the contiguous pool 93751–93758. `picksFormat = "zoneOnly"`
+    -- renders the row as "Featured Dungeon (Voidscar Arena)" — same shape as
+    -- Void Assault.
     { key = "featuredDungeon", label = "Featured Dungeon", short = "FeatD",
       levelMin = 90,
       questIDs = {
@@ -158,18 +151,15 @@ ns.weeklies = {
     -- Hope in the Darkest Corners — Halduron Brightwing's sub-90 weekly
     -- (offered in place of Featured Dungeon while levelling). Asks for
     -- 10 Midnight activities (world quests / dungeons / delves), any mix.
-    -- Confirmed 2026-05-26 on Alaelyne (level 80). levelMax=89 hides the
-    -- row once the character hits max and Halduron switches to the
-    -- Featured Dungeon variant.
+    -- levelMax=89 hides the row once the character hits max and Halduron
+    -- switches to the Featured Dungeon variant.
     { key = "hopeDarkest", questID = 95468, label = "Hope in the Darkest Corners", short = "Hope",
       hint = "10 Midnight activities", levelMax = 89 },
 
-    -- Void Assault zone-rotation weekly. The active zone changes weekly
-    -- (12.0.5 design note); each zone has its own questID. Harandar /
-    -- Voidstorm variants likely exist; add when harvest reveals them.
-    -- `picks` + `picksFormat = "zoneOnly"` makes the render append the
-    -- active zone name directly — "Void Assault (Zul'Aman)" — instead
-    -- of the generic "(active zone)" placeholder we used before.
+    -- Void Assault zone-rotation weekly. The active zone changes weekly; each
+    -- zone has its own questID. Add other zone variants if the rotation
+    -- surfaces them. `picks` + `picksFormat = "zoneOnly"` makes the render
+    -- append the active zone name directly — "Void Assault (Zul'Aman)".
     { key = "voidAssaultZone", label = "Void Assault", short = "VoidA",
       questIDs = {
           94385,  -- Void Assaults: Eversong Woods
@@ -202,10 +192,9 @@ ns.weeklies = {
     --
     -- The pool extends with ~30 Favor-unlocked weeklies surfaced via vendor
     -- token spend (Apprentice Diell / Armorer Goldcrest / Ranger Allorn /
-    -- Neriv). 3 known (91984 Sungrub Silk, 91979 Chop It Down, 91978
-    -- Taxing the Tideborne). BeaconHarvest's discovery logger fills the
-    -- rest as the player engages — pool not in the row schema yet because
-    -- we don't have enough IDs to render a stable X/N count.
+    -- Neriv). 3 known (91984 Sungrub Silk, 91979 Chop It Down, 91978 Taxing
+    -- the Tideborne). The full pool isn't in the row schema yet — not enough
+    -- IDs to render a stable X/N count.
     { key = "soiree", label = "Saltheril's Soiree", short = "Soir",
       -- No level gate: Saltheril's Soiree is playable sub-90 and its access is
       -- warband-wide (all characters see the event on the map once any char
@@ -288,31 +277,24 @@ ns.weeklies = {
       end,
     },
 
-    -- A Gnawing Void of Curiosity — Naleidea Rivergleam's auto-credited
-    -- weekly that fires on the first delve completion of the week. Reward
-    -- is Voidlight Marl currency, so a T4+ tier gate is likely (Marl
-    -- doesn't drop from low tiers). Frequency=2 in Blizzard's quest data
-    -- confirms weekly cadence even though Wowhead misclassifies it as
-    -- one-time. Re-verify reset behaviour on first weekly cycle; rip if
-    -- 93784 doesn't actually clear.
-    -- Confirmed warband-shared 2026-05-26: Artherio's completion auto-
-    -- credited Shatanaris (93784=true on Sha before she ran any delve
-    -- this week). The reward (Voidlight Marl) still implies a T4+ gate
-    -- at the credit boundary, but the credit propagates to alts.
+    -- A Gnawing Void of Curiosity — Naleidea Rivergleam's auto-credited weekly
+    -- that fires on the warband's first delve completion of the week. Reward is
+    -- Voidlight Marl, which implies a T4+ tier gate (Marl doesn't drop from low
+    -- tiers). Frequency=2 in Blizzard's quest data confirms weekly cadence even
+    -- though Wowhead misclassifies it as one-time. The credit is warband-shared
+    -- — completing it on one character credits the others.
     { key = "gnawingVoid",   questID = 93784, label = "Gnawing Curiosity", short = "GnawC",
       hint = "warband first delve T4+" },
 
-    -- Beacon of Hope weekly. SOLVED 2026-06-03: the per-character weekly is
-    -- "loot the Nullaeus Cache" (the nemesis cache you get after using a
-    -- Beacon of Hope to summon Nullaeus in a delve). There is NO quest flag
-    -- or scenario criterion for it (verified across quest/scenario/loot
-    -- harvests) — the only signal is looting the cache container, identified
-    -- by its GameObject ID 618495. A LOOT_OPENED hook in Core sets
+    -- Beacon of Hope weekly. The per-character weekly is "loot the Nullaeus
+    -- Cache" (the nemesis cache you get after using a Beacon of Hope to summon
+    -- Nullaeus in a delve). There is NO quest flag or scenario criterion for it
+    -- — the only signal is looting the cache container, identified by its
+    -- GameObject ID 618495. A LOOT_OPENED hook in Core sets
     -- char.delveBounty.cacheLooted (cleared at the weekly reset); customDone
-    -- reads it. (91190 was a red herring — per-delve reward-chest plumbing.
-    -- The Trovehunter's Bounty → Hidden Trove chain has no weekly lockout, so
-    -- it is intentionally NOT tracked.) See memory:
-    -- brokermidnightevents-beacon-of-hope-untrackable.
+    -- reads it. (91190 is per-delve reward-chest plumbing, not this weekly; the
+    -- Trovehunter's Bounty → Hidden Trove chain has no weekly lockout, so it is
+    -- intentionally NOT tracked.)
     { key = "delversBounty", label = "Beacon of Hope", short = "Beacon",
       hint = "Nullaeus Cache",
       customDone = function()
@@ -320,22 +302,17 @@ ns.weeklies = {
                  and true or false
       end },
 
-    -- Arcantina — Khadgar's patron-tavern hub (unlocked via Arator's
-    -- Journey campaign chapter + Personal Key toy). Weekly visit slot
-    -- (quest 93767) confirmed resetting; the nine patron quests
-    -- (92319–92327) are a LIFETIME collection (Old Soldiers achievement
-    -- structure) and their flags persist. Annotated with running
-    -- collection progress via `progressIDs`. See memory:
-    --   brokermidnightevents-arcantina
-    -- Tooltip output suppressed pending investigation: 93767 flips true
-    -- from non-Arcantina activity (e.g. on Artherio 2026-05-26 it went
-    -- true after world boss / Liadrin's weekly, before any Arcantina
-    -- interaction). Per-char (Shatanaris stayed false post-reset), so
-    -- not account-wide, but the credit condition is broader than the
-    -- quest's name suggests. Data path stays warm — `hideInTooltip`
-    -- only skips the rendering step in This Week, RefreshWeeklies
-    -- continues to populate ns.char.weeklies.arcantina so future
-    -- probes can correlate triggers.
+    -- Arcantina — Khadgar's patron-tavern hub (unlocked via the Arator's
+    -- Journey campaign chapter + Personal Key toy). Weekly visit slot (quest
+    -- 93767) resets; the nine patron quests (92319–92327) are a LIFETIME
+    -- collection (Old Soldiers achievement structure) whose flags persist.
+    -- Annotated with running collection progress via `progressIDs`.
+    --
+    -- Tooltip rendering is suppressed (`hideInTooltip`): 93767 flips true from
+    -- activity unrelated to Arcantina (the credit condition is broader than the
+    -- quest name suggests, and it's per-character), which would mislead. The
+    -- data path stays warm — hideInTooltip only skips the This Week render;
+    -- RefreshWeeklies still populates ns.char.weeklies.arcantina.
     { key = "arcantina", questID = 93767, label = "Arcantina", short = "Arc",
       hideInTooltip = true,
       progressIDs = {
@@ -354,18 +331,15 @@ ns.weeklies = {
 }
 
 -- Myth-crest delve weekly. There is NO quest flag or currency weekly-cap
--- field for "loot 20 Myth Dawncrests from bountiful delves per week"
--- (confirmed 2026-05-31: a 5-crest delve loot ticked no quest objective,
--- and the currency API reports maxWeekly=0 / earnedThisWeek=0 for the
--- Dawncrest tiers). So we count it ourselves: sum CURRENCY_DISPLAY_UPDATE
--- gains for the Myth Dawncrest currency while inside a delve (scenario),
--- capped at the weekly max. Raid / dungeon crests are excluded by the
--- scenario gate.
+-- field for "loot 20 Myth Dawncrests from bountiful delves per week" (the
+-- currency API reports maxWeekly=0 / earnedThisWeek=0 for the Dawncrest
+-- tiers). So we count it ourselves: sum CURRENCY_DISPLAY_UPDATE gains for the
+-- Myth Dawncrest currency while inside a delve (scenario), capped at the
+-- weekly max. Raid / dungeon crests are excluded by the scenario gate.
 --
--- Both values are patch-fragile (the currency ID rotates per season; the
--- cap can change on patch). Re-harvest via /mecrest if the row stops
--- updating or the cap looks wrong. Currency ID verified from a live
--- delve loot 2026-05-31 (Myth Dawncrest, +5 per coffer).
+-- Both values are patch-fragile (the currency ID rotates per season; the cap
+-- can change on patch). Update them if the row stops counting or the cap
+-- looks wrong.
 ns.mythCrestCurrencyID = 3347
 ns.mythCrestWeeklyCap  = 20
 
@@ -400,15 +374,14 @@ ns.knownEventNames = {
 --   "weekly"    — the bar value resets each weekly reset. Settings.lua's
 --                 reset hook sets cached value to 0 so the tooltip reflects
 --                 the post-reset state immediately. (No current users —
---                 Voidcores turned out to be seasonCap.)
+--                 Voidcores uses seasonCap.)
 --   "seasonCap" — the VALUE is season-cumulative and persists across weekly
 --                 resets; only the CAP rises (+2/week for Voidcores in S1,
 --                 may change on patch). We can't know the new cap until a
 --                 Decimus visit re-syncs the widget, so the reset hook keeps
 --                 the value and marks `maxStale`; the render shows `NN/??`
 --                 plus a faint "visit Decimus" prompt until the next sync
---                 clears it. Verified 2026-06-03: Decimus read 12/14 the
---                 reset after 12/12, value carried over.
+--                 clears it.
 --   "lifetime"  — the bar ticks up over multiple weeks (Nilhammer: +1/wk
 --                 up to 4/4). Once `completedAt` is reached, the row
 --                 renders dim with a ✓ permanently.
@@ -435,17 +408,14 @@ ns.preyHuntsWidgetSet = 1843
 -- completed prey hunts per tier each week ("Normal 3/4 · Hard 2/4 ·
 -- Nightmare 0/4"). Cap per tier per week is 4.
 --
--- Normal block is fully enumerable: contiguous 91095–91124, one per
--- target in storyline order (30 named targets). Verified 2026-05-26
--- via Wowhead crawl.
+-- Normal block is fully enumerable: contiguous 91095–91124, one per target in
+-- storyline order (30 named targets).
 --
--- Hard / Nightmare IDs are scattered across ~91210–91267 with gaps
--- and irregular pairing. The confirmed entries below are the ones we
--- could pin from in-game harvest plus targeted Wowhead lookups.
--- Coverage grows automatically at addon load by parsing every
--- "Prey: <Name> (Tier)" entry in the harvest quest catalogue
--- (Broker_MidnightEventsQuestCatalogue), so the table self-heals as
--- the warband encounters more variants over time.
+-- Hard / Nightmare IDs are scattered across ~91210–91267 with gaps and
+-- irregular pairing; the entries below are the confirmed ones. Coverage can
+-- grow at load by parsing "Prey: <Name> (Tier)" titles from the dev quest
+-- catalogue when present (see Core's AugmentPreyQuestsFromCatalogue); no-op
+-- in release builds.
 ns.preyQuests = {}
 for id = 91095, 91124 do ns.preyQuests[id] = "normal" end
 -- Confirmed Hard / Nightmare (partial coverage; catalogue scan fills in
@@ -456,7 +426,7 @@ ns.preyQuests[91212] = "hard"       -- Magistrix Emberlash
 ns.preyQuests[91213] = "nightmare"  -- Magistrix Emberlash
 ns.preyQuests[91220] = "hard"       -- Deliah Gloomsong
 ns.preyQuests[91221] = "nightmare"  -- Deliah Gloomsong
-ns.preyQuests[91263] = "hard"       -- Lost Theldrin (approximate; pair unverified)
+ns.preyQuests[91263] = "hard"       -- Lost Theldrin (approximate)
 ns.preyQuests[91264] = "nightmare"  -- Lost Theldrin
 ns.preyQuests[91265] = "hard"       -- Thornspeaker Edgath
 ns.preyQuests[91266] = "nightmare"  -- Thornspeaker Edgath
@@ -563,15 +533,11 @@ ns.eventProgressWidgetSetByName = {
 ns.eventFiringHeuristic = {
     [8718] = {  -- Void Incursion (Eversong variant)
         type = "lowProgress", threshold = 10,
-        comment = "Bar resets at major-attack trigger; firing observed to "
-               .. "conclude by ~10% rebuild. 2-sample empirical "
-               .. "(2026-05-14): bar at 8.35% and ~10% both during "
-               .. "confirmed-firing states. Brief false positives after "
-               .. "weekly reset until bar crosses 10%. Does NOT catch "
-               .. "server-triggered firings that occur mid-build without "
-               .. "the 100%→reset cycle (observed at 17.2% in Zul'Aman "
-               .. "2026-05-23) — the bar value alone is ambiguous in that "
-               .. "case; would need a separate signal to detect reliably.",
+        comment = "Bar resets at the major-attack trigger; firing concludes by "
+               .. "~10% rebuild. Brief false positives after weekly reset until "
+               .. "the bar crosses 10%. Does NOT catch server-triggered firings "
+               .. "mid-build (no 100%→reset cycle) — the bar value alone is "
+               .. "ambiguous there; a separate signal would be needed.",
     },
 }
 
@@ -615,10 +581,6 @@ end
 -- in ns.weeklies above. Each pool entry now carries its own `picks` map
 -- so the same render path serves both Liadrin and the Bonus Event row.)
 
--- Candidate weeklies awaiting promotion (and out-of-scope IDs ceded to
--- Midnight Routine) used to live here as commented-out tables. Both lists
--- moved to design/harvest-notes.md to keep the runtime-loaded file lean.
--- Promote a candidate to ns.weeklies above when classification firms up.
 
 -- ── World boss credit quests ──────────────────────────────────────────────────
 -- Midnight world bosses register completion via per-boss kill-credit quests,

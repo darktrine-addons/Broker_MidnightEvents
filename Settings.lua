@@ -124,10 +124,8 @@ sf:SetScript("OnEvent", function(self, event, name)
     char.bountifulSeen       = char.bountifulSeen       or {}
     char.bountifulResetEpoch = char.bountifulResetEpoch or 0
 
-    -- The earlier eventScheduledToday cache turned out unnecessary — the
-    -- claimed-today heuristic in Core.lua reads source + isTimed + current
-    -- scheduler view directly, no session memory required. Clean up if
-    -- present from a prior install.
+    -- Legacy fields, no longer used (the claimed-today heuristic in Core reads
+    -- source + isTimed + the live scheduler view directly). Cleared on load.
     char.eventScheduledToday      = nil
     char.eventScheduledResetEpoch = nil
 
@@ -153,16 +151,11 @@ sf:SetScript("OnEvent", function(self, event, name)
     if db.altsPanel.showHidden == nil then db.altsPanel.showHidden = false end
     db.hiddenChars = db.hiddenChars or {}
 
-    -- Note: we considered pre-warming the achievement catalog with
-    -- LoadAddOn("Blizzard_AchievementUI") at init so the delve-story
-    -- annotations could render definite colors for never-engaged delves.
-    -- Empirically (2026-05-23) loading the UI module is NOT sufficient —
-    -- WoW genuinely lazy-loads per-achievement criteria only when the
-    -- player engages with the content (runs that delve, scrolls to the
-    -- achievement in the UI, etc.). For our case, that means the grey
-    -- "unknown" fallback color persists for delves the character has
-    -- never run — accepted as the honest signal rather than guessing
-    -- wrong with a "not done" gold colour.
+    -- Achievement criteria lazy-load: WoW only populates per-achievement
+    -- criteria once the player engages the content, and
+    -- LoadAddOn("Blizzard_AchievementUI") does not pre-warm them. So delve-
+    -- story annotations stay grey "unknown" for never-run delves rather than
+    -- guessing a wrong "not done" colour.
 
     -- Weekly reset detection: if the most recent reset is newer than the one
     -- this character's data covers, wipe weekly state. Voidforge entries
@@ -180,13 +173,11 @@ sf:SetScript("OnEvent", function(self, event, name)
         char.weeklies    = {}
         char.weeklyReset = currentReset
         -- Picks cache must reset too: pool quest completion flags don't
-        -- reliably clear on weekly reset (Artherio's account showed all
-        -- 9 Liadrin pool members flagged simultaneously), so the
-        -- in-log-or-cached-flagged detection would otherwise carry last
-        -- week's pick into the new cycle indefinitely. Clearing here
-        -- starts each new week from a clean slate; the next time the
-        -- player accepts a Liadrin / Bonus Event / Void Assault quest
-        -- the pass-1 active-log scan refills it.
+        -- reliably clear on weekly reset (all pool members can read flagged
+        -- simultaneously), so the in-log-or-cached-flagged detection would
+        -- otherwise carry last week's pick into the new cycle. Clearing here
+        -- starts each week clean; the next accept of a Liadrin / Bonus Event /
+        -- Void Assault quest refills it via the active-log scan.
         char.picks       = {}
         if char.voidforge and ns.charProgress then
             for _, entry in ipairs(ns.charProgress) do

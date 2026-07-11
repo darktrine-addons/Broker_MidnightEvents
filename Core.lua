@@ -189,10 +189,9 @@ end
 -- Match policy: exact case-sensitive equality first, then fuzzy
 -- (Levenshtein ≤ 2 against lowercased forms). The fuzzy fallback
 -- absorbs Blizzard typos like "Captured Widlife" (in the widget) vs
--- "Captured Wildlife" (in the achievement criterion) — observed on
--- Shadowguard Point 2026-05-23. Two criteria per achievement have
--- always been visibly distinct, so a 2-edit allowance can't realistically
--- collide.
+-- "Captured Wildlife" (in the achievement criterion). The two criteria per
+-- achievement are always visibly distinct, so a 2-edit allowance can't
+-- realistically collide.
 --
 -- Returns nil when:
 --   * The delve isn't in our achievement map
@@ -510,25 +509,22 @@ end
 --      flag stays true. Keep the cached pick across that transition.
 --
 -- We *deliberately do not* fall back to "any pool member flagged
--- complete" — verified 2026-05-24 on Artherio that all 9 Liadrin pool
--- member quest IDs (93769, 93889, 93890, 93892, 93909, 93910, 93911,
--- 94457, 95842) returned IsQuestFlaggedCompleted = true at once. The
--- flags are achievement-style and persist across weekly resets, so
--- "any flagged" is meaningless once a player has rotated through
--- multiple Liadrin picks over the season. Better to show no
--- annotation than to guess wrong.
+-- complete": every Liadrin pool member quest ID can read
+-- IsQuestFlaggedCompleted = true at once — the flags are achievement-style
+-- and persist across weekly resets — so "any flagged" is meaningless once a
+-- player has rotated through multiple picks over the season. Better to show
+-- no annotation than to guess wrong.
 --
 -- Cold-start consequence: a character who completed a Liadrin pick
 -- before the feature was deployed AND never opens the addon while
 -- the quest is in their log will display the row as done (the slot's
 -- own IsWeeklySlotDone signal) but without the "(<choice> picked)"
 -- annotation. Acceptable — the completion state is what matters.
--- Augment ns.preyQuests from the harvest catalogue. Hard/Nightmare quest
--- IDs aren't fully enumerable from the public web — Wowhead has gaps and
--- irregular pairing — so the canonical Hard/NM set fills in as the
--- warband encounters new variants. Parses every "Prey: <Name> (Tier)"
--- title in Broker_MidnightEventsQuestCatalogue and records the tier.
--- Idempotent: hardcoded entries from Data.lua aren't overwritten, and
+-- Augment ns.preyQuests from the dev quest catalogue when it's present
+-- (no-op in release builds, where the catalogue isn't written). Hard/Nightmare
+-- Prey quest IDs aren't fully enumerable from public sources, so this parses
+-- any "Prey: <Name> (Tier)" titles the catalogue has recorded and fills in
+-- the tier. Idempotent: hardcoded Data.lua entries aren't overwritten, and
 -- repeated calls are a no-op.
 local function AugmentPreyQuestsFromCatalogue()
     if not (ns.preyQuests and Broker_MidnightEventsQuestCatalogue) then return end
@@ -690,9 +686,8 @@ end
 --      returning nil during early-load)
 --   3. Settling-window write skip: at the daily reset moment,
 --      GetDelvesForMap briefly returns BOTH yesterday's outgoing rotation
---      AND today's incoming rotation in a single snapshot (observed
---      Shatanaris 2026-05-15: 7 entries captured at reset+49s, where the
---      daily cap is 4). For RESET_SETTLING_SEC after reset we skip cache
+--      AND today's incoming rotation in a single snapshot (more entries than
+--      the daily cap of 4). For RESET_SETTLING_SEC after reset we skip cache
 --      writes entirely, letting the API settle before we trust it. Cache
 --      entries already in the table from prior sessions persist; they'll
 --      be cleaned at the next daily-reset bulk wipe. Forward-only fix —
@@ -1159,7 +1154,7 @@ local function BuildTooltip()
     -- 'X/Y done' summary so the player knows the status without scanning.
     -- World Boss quest gates at max level (90) like the other endgame
     -- weeklies. Sub-90 alts never see the credit, so hide the row to
-    -- avoid permanent ✗ noise. Confirmed 2026-05-26 on Alaelyne (lv 80).
+    -- avoid permanent ✗ noise.
     local playerLevelForWB = UnitLevel and UnitLevel("player") or 0
     local showWB = (not ns.db or ns.db.showWorldBosses ~= false)
                    and playerLevelForWB >= 90
@@ -1687,8 +1682,8 @@ end)
 -- ── Myth-crest delve counter ────────────────────────────────────────────────
 -- Counts Myth Dawncrest gains while inside a delve (scenario), capped at
 -- the weekly max. There's no quest flag or currency weekly-cap field for
--- this weekly (verified 2026-05-31), so we tally it from the currency
--- event. The scenario gate excludes raid / dungeon crests by construction.
+-- this weekly, so we tally it from the currency event. The scenario gate
+-- excludes raid / dungeon crests by construction.
 -- Only counts once tracking is "valid" for the current week — i.e. this
 -- char witnessed the weekly-reset boundary (Settings.lua sets validSince),
 -- so a mid-week install greys the row rather than showing a partial.
@@ -1717,9 +1712,9 @@ crestFrame:SetScript("OnEvent", function(_, _, currencyType, quantity, quantityC
 end)
 
 -- ── Beacon of Hope weekly (Nullaeus Cache loot) ─────────────────────────────
--- The per-character Beacon weekly has NO quest flag or scenario criterion
--- (verified 2026-06-03 across quest/scenario/loot harvests). The only signal
--- is looting the Nullaeus Cache container, identified by its GameObject ID.
+-- The per-character Beacon weekly has NO quest flag or scenario criterion —
+-- the only signal is looting the Nullaeus Cache container, identified by its
+-- GameObject ID.
 -- GetLootSourceInfo's GUID encodes the source object; reading it on LOOT_OPENED
 -- is read-only and taint-safe. Set a per-char weekly flag when the cache is
 -- seen; Settings clears it at the weekly reset. Data's delversBounty.customDone
