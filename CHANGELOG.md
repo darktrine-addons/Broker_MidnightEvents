@@ -3,6 +3,10 @@
 User-facing changes, newest first. Internal and dev-tooling work lives in the
 git history, not here.
 
+## [v1.0.4](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.4) — 2026-07-11
+
+- chore: updated for WoW patch **12.0.7** (Interface 120007). No functional changes — every API the addon uses is unchanged in 12.0.7.
+
 ## [v1.0.3](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.3) — 2026-06-13
 
 - feat: **Bonus Event Weekly** now recognises the **Arena Skirmishes** variant ("The Arena Calls") — the rotation is complete, so whichever bonus event is active this week is detected and annotated.
