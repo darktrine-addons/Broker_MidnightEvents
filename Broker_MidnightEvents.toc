@@ -1,4 +1,4 @@
-## Interface: 120007
+## Interface: 120100
 ## Category: Data Broker
 ## Title: Broker: |cffffffffMidnightEvents|r
 ## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
