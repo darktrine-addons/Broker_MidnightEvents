@@ -3,6 +3,12 @@
 User-facing changes, newest first. Internal and dev-tooling work lives in the
 git history, not here.
 
+## [v1.0.7](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.7) — 2026-11-22
+
+- fix: **Upcoming no longer floods with "Event in …" rows on patch 12.1.** Each event now appears once, with its next start time.
+- feat: the new 12.1 events **Curse Surge** (The Coiled Isle) and **Aqir Invasion** are shown with their proper names, under *Now* while running and under *Upcoming* before they start.
+- fix: Upcoming countdowns now count down to when an event **starts** (they previously counted to its end), and events already running, such as Abundance, no longer appear in both *Now* and *Upcoming*.
+
 ## [v1.0.6](https://github.com/darktrine-addons/Broker_MidnightEvents/releases/tag/v1.0.6) — 2026-11-22
 
 - chore: updated for WoW patch **12.1.5**, and ready for **12.1.7** (Interface 120105, 120107). No functional changes.

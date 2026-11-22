@@ -365,24 +365,18 @@ end
 -- Derive remaining seconds + a state tag for an event entry from ns.Events.
 -- Prefers epoch fields (startTime/endTime) over server-snapshot secondsLeft
 -- so countdowns decrement live between Events refreshes.
---   "upcoming" — future fire. secs = time-until-fire.
---                For scheduler-scheduled entries: endTime is the fire time
---                (not "active until"); startTime is a pre-fire schedule
---                lock-in timestamp that can be in the past. We always treat
---                source="scheduler-scheduled" as upcoming with endTime as
---                the fire time.
---                For other sources: startTime > now → fire at startTime.
---   "active"   — currently firing (map-event POIs with secondsLeft, or
---                scheduler-ongoing with an endTime — though ongoing
---                entries typically lack one).
+--   "upcoming" — startTime > now. secs = time until the event starts.
+--   "active"   — inside its window (start <= now < end; secs = time until
+--                endTime), or a map-event POI with secondsLeft.
+--                (12.1.x data + Blizzard's panel confirm scheduler entries
+--                are real start/end windows; the 2026-05 "endTime = next
+--                fire" reading is superseded.)
 --   "wave"     — continuously-ongoing POI with an internal wave cadence
 --                (Stormarion Assault); secs = wall-clock seconds to next wave
 --   "ongoing"  — untimed and no cadence override (Legends); secs = nil
 local function EventRemaining(ev, now)
-    if ev.source == "scheduler-scheduled"
-       and ev.endTime and ev.endTime > now then
-        return ev.endTime - now, "upcoming"
-    end
+    -- Scheduler entries are real windows (12.1.x): before startTime →
+    -- upcoming (count to start); inside the window → active (count to end).
     if ev.startTime and ev.startTime > now then
         return ev.startTime - now, "upcoming"
     end
@@ -1043,7 +1037,7 @@ local function BuildTooltip()
         Tooltip:AddLine(" ")
         Tooltip:AddLine("Upcoming (next 24h)", CL_r, CL_g, CL_b)
         for _, ev in ipairs(upcoming) do
-            local secs  = (ev.endTime or ev.startTime or 0) - now
+            local secs  = (ev.startTime or ev.endTime or 0) - now
             local atlas = ev.atlasName
             local label = atlas
                           and ("|A:" .. atlas .. ":16:16|a " .. (ev.name or "Event"))
@@ -1814,16 +1808,80 @@ SlashCmdList.BMESCHED = function()
         print(string.format("  [%d] poi=%d  claimed=%s  %s",
             i, ev.areaPoiID, tostring(ev.rewardsClaimed), resolveName(ev.areaPoiID)))
     end
-    print("|cffffcc00Scheduled (first 10):|r")
-    for i = 1, math.min(10, #scheduled) do
-        local ev = scheduled[i]
-        local dt = (ev.startTime or 0) - time()
-        local when = dt > 0 and string.format("+%dm", math.floor(dt / 60))
-                            or string.format("-%dm (active until +%dm)",
-                                math.floor(-dt / 60),
-                                math.floor(((ev.endTime or 0) - time()) / 60))
-        print(string.format("  [%d] poi=%d  start %s  %s",
-            i, ev.areaPoiID, when, resolveName(ev.areaPoiID)))
+    -- Persist the full raw view to SavedVariables (Broker_MidnightEventsDB
+    -- .debugSched) so it can be read from disk after /reload — chat output is
+    -- too long to copy. Overwritten on every /mesched run.
+    if ns.db then
+        local function copy(t, depth)
+            local o = {}
+            for k, v in pairs(t) do
+                local tv = type(v)
+                if tv == "table" and depth < 2 then o[k] = copy(v, depth + 1)
+                elseif tv == "string" or tv == "number" or tv == "boolean" then o[k] = v end
+            end
+            return o
+        end
+        local function annotate(ev)
+            local e = copy(ev, 0)
+            local poi = ev.areaPoiID
+            local blz = C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
+                        and C_AreaPoiInfo.GetAreaPOIInfo(nil, poi)
+            e._blzName  = blz and blz.name or false
+            e._mapID    = C_EventScheduler.GetEventUiMapID and C_EventScheduler.GetEventUiMapID(poi) or false
+            e._mapName  = resolveName(poi)
+            e._zone     = C_EventScheduler.GetEventZoneName and C_EventScheduler.GetEventZoneName(poi) or false
+            e._cache    = (ns.db.eventNameCache and ns.db.eventNameCache[poi])
+                          or (ns.knownEventNames and ns.knownEventNames[poi]) or false
+            return e
+        end
+        local dump = { time = time(), build = select(4, GetBuildInfo()),
+                       ongoing = {}, scheduled = {}, upcoming = {} }
+        for i, ev in ipairs(ongoing)   do dump.ongoing[i]   = annotate(ev) end
+        for i, ev in ipairs(scheduled) do dump.scheduled[i] = annotate(ev) end
+        for i, ev in ipairs(ns.Events and ns.Events.GetUpcoming(24 * 3600) or {}) do
+            dump.upcoming[i] = { name = ev.name, source = ev.source, eventKey = ev.eventKey,
+                                 eventID = ev.eventID, areaPoiID = ev.areaPoiID,
+                                 startTime = ev.startTime, endTime = ev.endTime }
+        end
+        ns.db.debugSched = dump
+        print("|cffffcc00MidnightEvents|r raw dump saved to SavedVariables (debugSched) — /reload to flush to disk.")
+    end
+
+    -- Grouped by eventKey (12.1.x returns every occurrence, not just the next
+    -- fire). Per key: occurrence count, next start/end, eventID, scheduler
+    -- zone, and the name as resolved three ways:
+    --   blz = GetAreaPOIInfo(nil, poi)  — what Blizzard's panel uses; "-" = Blizzard hides it
+    --   map = GetAreaPOIInfo(GetEventUiMapID(poi), poi)  — our live lookup
+    --   cache = account-wide eventNameCache / knownEventNames fallback
+    local groups, order = {}, {}
+    for _, ev in ipairs(scheduled) do
+        local key = ev.eventKey or ("poi" .. tostring(ev.areaPoiID))
+        local g = groups[key]
+        if not g then
+            g = { ev = ev, n = 0 }
+            groups[key] = g
+            order[#order + 1] = key
+        end
+        g.n = g.n + 1
+    end
+    print(string.format("|cffffcc00Scheduled by eventKey:|r %d keys", #order))
+    local now = time()
+    for i, key in ipairs(order) do
+        local g, ev = groups[key], groups[key].ev
+        local poi = ev.areaPoiID
+        local blz = C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
+                    and C_AreaPoiInfo.GetAreaPOIInfo(nil, poi)
+        local zone = C_EventScheduler.GetEventZoneName
+                     and C_EventScheduler.GetEventZoneName(poi) or "?"
+        local cached = (ns.db and ns.db.eventNameCache and ns.db.eventNameCache[poi])
+                       or (ns.knownEventNames and ns.knownEventNames[poi]) or "-"
+        print(string.format(
+            "  [%d] key=%s x%d poi=%s evID=%s zone=%s start%+dm end%+dm claimed=%s | blz=%s map=%s cache=%s",
+            i, tostring(key), g.n, tostring(poi), tostring(ev.eventID), zone,
+            math.floor(((ev.startTime or 0) - now) / 60),
+            math.floor(((ev.endTime or 0) - now) / 60),
+            tostring(ev.rewardsClaimed),
+            blz and blz.name or "-", resolveName(poi), cached))
     end
 end
 

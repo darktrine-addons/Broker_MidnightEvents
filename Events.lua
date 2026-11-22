@@ -165,6 +165,13 @@ local function ResolvePoi(areaPoiID, displayInfo)
                   or state.continentMapID
     local info  = (C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo
                    and C_AreaPoiInfo.GetAreaPOIInfo(mapID, areaPoiID)) or nil
+    -- 12.1.x events (Curse Surge on The Coiled Isle, Aqir Invasion) have no
+    -- GetEventUiMapID, so the continent-map lookup above misses them. Blizzard's
+    -- own EventScheduler.lua resolves every scheduler POI with a nil uiMapID —
+    -- use the same call as the fallback before the cache / "Event in" paths.
+    if not info and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo then
+        info = C_AreaPoiInfo.GetAreaPOIInfo(nil, areaPoiID)
+    end
 
     -- Cache successful name resolutions so a different alt (or a later
     -- session on the same alt) can show the proper name even when the API
@@ -366,14 +373,39 @@ local function Refresh()
     --    Filter by endTime > now (any future fire — past-startTime is OK).
     --    Sort by endTime ascending so the renderer can use endTime - now as
     --    the "in X" countdown. Matches the Blizzard events panel ordering.
+    --
+    --    12.1.x: the scheduler returns EVERY occurrence in its window, not
+    --    just each event's next fire — e.g. Curse Surge (5 rotating POIs,
+    --    every 150 min) and Aqir Invasion (hourly) add ~300 rows. eventKey is
+    --    unique per occurrence (timestamp + eventID), so it can't dedup them
+    --    (Blizzard's panel only dedups literal duplicate keys and caps at 12
+    --    rows). Keep the first future occurrence per areaPoiID instead: one
+    --    row per distinct event, showing its next fire. The API list is
+    --    ordered by startTime, so the first future hit per POI is the next one.
+    --
+    --    12.1.x timing (supersedes the 2026-05 "endTime = next fire" reading):
+    --    each entry is a real window — startTime = event starts, endTime =
+    --    event ends (Curse Surge 30 min, Aqir Invasion 15 min, Abundance 8 h).
+    --    Blizzard's panel uses the same model: active = start <= now < end,
+    --    countdown to startTime. So: start in the future → Upcoming; window
+    --    open now → candidate for Now (merged after the map scan, so the
+    --    richer map-POI entry wins when both exist).
     local rawScheduled = C_EventScheduler.GetScheduledEvents
                          and C_EventScheduler.GetScheduledEvents() or {}
+    local seenPois = {}
+    local runningScheduled = {}
     for _, ev in ipairs(rawScheduled) do
-        if ev.endTime and ev.endTime > now then
+        local key = ev.areaPoiID or ev.eventKey
+        if ev.endTime and ev.endTime > now and not (key and seenPois[key]) then
+            if key then seenPois[key] = true end
             local poi = ResolvePoi(ev.areaPoiID, ev.displayInfo)
             if poi then
-                state.upcoming[#state.upcoming + 1] =
-                    BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
+                local entry = BuildSchedulerEntry(ev, poi, "scheduler-scheduled")
+                if ev.startTime and ev.startTime <= now then
+                    runningScheduled[#runningScheduled + 1] = entry
+                else
+                    state.upcoming[#state.upcoming + 1] = entry
+                end
             end
         end
     end
@@ -465,10 +497,21 @@ local function Refresh()
         end
     end
 
-    -- Sort by endTime ascending (= fire time ascending; see the
-    -- scheduler-scheduled block above for why endTime is the fire time).
+    -- Scheduler windows open right now that the map scan didn't already
+    -- surface (e.g. Curse Surge on The Coiled Isle, which isn't in
+    -- MIDNIGHT_ZONES). Deduped by POI and by name against the map entries.
+    for _, entry in ipairs(runningScheduled) do
+        if not seen[entry.areaPoiID]
+           and not (entry.name and seenNames[entry.name]) then
+            state.active[#state.active + 1] = entry
+            seen[entry.areaPoiID] = true
+            if entry.name then seenNames[entry.name] = true end
+        end
+    end
+
+    -- Sort Upcoming by start time ascending (= Blizzard panel ordering).
     table.sort(state.upcoming, function(a, b)
-        return (a.endTime or 0) < (b.endTime or 0)
+        return (a.startTime or a.endTime or 0) < (b.startTime or b.endTime or 0)
     end)
 
     -- 4. Bountiful Delves on the continent map. Distinct POI category from
@@ -521,7 +564,7 @@ function ns.Events.GetUpcoming(maxAheadSecs)
     local cutoff = time() + maxAheadSecs
     local out = {}
     for _, ev in ipairs(state.upcoming) do
-        if (ev.endTime or 0) <= cutoff then
+        if (ev.startTime or ev.endTime or 0) <= cutoff then
             out[#out + 1] = ev
         end
     end
